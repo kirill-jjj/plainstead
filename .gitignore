@@ -252,3 +252,5 @@ _Pvt_Extensions
 .fake/
 
 *.VC.db
+probe.ps1
+ConsoleInstead/ConsoleInstead/
