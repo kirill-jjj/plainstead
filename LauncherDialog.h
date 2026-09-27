@@ -8,6 +8,7 @@ public:
 	LauncherDialog(HWND hWndParent = NULL);
 	virtual ~LauncherDialog();
 	INT_PTR DoModal(HWND hWndParent);
+	void EndModal(HWND hWnd, INT_PTR code); // close the modal loop (works with the modeless dialog)
 	bool isWantStartGame();
 	std::wstring getStartGamePath();
 	std::wstring getStartGameTitle();
@@ -74,4 +75,6 @@ private:
 	HWND m_hBtnPlayGame;
 	HWND m_hBtnResumeGame;
 	HWND m_hComboFiler;
+	bool m_running;   // modal loop flag (modeless dialog running as modal)
+	INT_PTR m_endCode;
 };

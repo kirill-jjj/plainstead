@@ -18,7 +18,13 @@ public:
 	static void CreateView(HWND hWndMain); // create child controls inside the main window
 
 	HWND GetHwndMain() const { return m_hWndMain; }
+	HWND GetHwndView() const { return m_hWndView; }
 	HWND GetHwndOut() const { return m_hOutEdit; }
+
+	// Enter in one of the game lists: run the selected action (was PreTranslateMessage in MFC)
+	bool OnListEnter();
+	// keyboard pre-processing for the main loop (Tab navigation, Enter in lists)
+	bool PreTranslateMessage(MSG* pMsg);
 
 	void OnSize(int cx, int cy);
 	void OnMainSetFocus();

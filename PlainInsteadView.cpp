@@ -92,8 +92,8 @@ void CPlainInsteadView::CreateView(HWND hWndMain)
 		m_curView = new CPlainInsteadView();
 
 	m_curView->m_hWndMain = hWndMain;
-	m_curView->m_hWndView = CreateWindowExW(0, L"PlainInsteadViewClass", L"",
-		WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+	m_curView->m_hWndView = CreateWindowExW(WS_EX_CONTROLPARENT, L"PlainInsteadViewClass", L"",
+		WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_GROUP,
 		0, 0, 0, 0, hWndMain, NULL, GetModuleHandleW(NULL), NULL);
 }
 
@@ -109,7 +109,7 @@ LRESULT CALLBACK CPlainInsteadView::ViewWndProc(HWND hWnd, UINT message, WPARAM 
 		HINSTANCE hInst = GetModuleHandleW(NULL);
 		// multiline output edit
 		m_curView->m_hOutEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-			WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_LEFT | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_LEFT | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_TABSTOP,
 			0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_EDIT_OUT, hInst, NULL);
 		// three lists: scene, inventory, ways
 		m_curView->m_hListScene = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
@@ -552,6 +552,154 @@ void CPlainInsteadView::SetOutputText(const std::wstring& newText, BOOL useHisto
 	}
 	SetWindowTextW(m_hOutEdit, newText.c_str());
 	m_newText = newText;
+}
+
+// run the command for the currently selected item of a game list
+// (restored from the MFC PreTranslateMessage: Enter in scene/inv/ways lists)
+bool CPlainInsteadView::OnListEnter()
+{
+	HWND focused = GetFocus();
+	if (focused == m_hListScene)
+	{
+		int sel_pos = (int)SendMessageW(m_hListScene, LB_GETCURSEL, 0, 0);
+		if (sel_pos == LB_ERR) return true;
+		if (pos_id_scene.count(sel_pos))
+		{
+			if (pos_id_scene[sel_pos] == 0)
+			{
+				MessageBeep(MB_OK);
+			}
+			else
+			{
+				int res_pos = pos_id_scene[sel_pos];
+				if (res_pos > 1000) res_pos -= 1000;
+				std::wstring res = std::to_wstring(res_pos);
+				if (!inv_save.empty()) { res = inv_save + L"," + res; inv_save.clear(); }
+				int total_list_sz = (int)SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0);
+				std::vector<wchar_t> selText(SendMessageW(m_hListScene, LB_GETTEXTLEN, sel_pos, 0) + 1);
+				SendMessageW(m_hListScene, LB_GETTEXT, sel_pos, (LPARAM)&selText[0]);
+				TryInsteadCommand(res, L"Выбор действия '" + std::wstring(&selText[0]) + L"'");
+				if ((int)SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0) == total_list_sz)
+					SendMessageW(m_hListScene, LB_SETCURSEL, sel_pos, 0);
+				if (SendMessageW(m_hListScene, LB_GETCURSEL, 0, 0) == LB_ERR && SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0) > 0)
+					SendMessageW(m_hListScene, LB_SETCURSEL, 0, 0);
+			}
+		}
+		else if (act_on_scene.count(sel_pos)) // inline lua action on the scene
+		{
+			std::wstring code = act_on_scene[sel_pos];
+			int total_list_sz = (int)SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0);
+			if (!inv_save.empty()) inv_save.clear();
+			std::vector<wchar_t> selText(SendMessageW(m_hListScene, LB_GETTEXTLEN, sel_pos, 0) + 1);
+			SendMessageW(m_hListScene, LB_GETTEXT, sel_pos, (LPARAM)&selText[0]);
+			TryInsteadCommand(code, L"Действие '" + savedSelInv + L"' на '" + std::wstring(&selText[0]) + L"'");
+			if ((int)SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0) == total_list_sz)
+				SendMessageW(m_hListScene, LB_SETCURSEL, sel_pos, 0);
+			if (SendMessageW(m_hListScene, LB_GETCURSEL, 0, 0) == LB_ERR && SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0) > 0)
+				SendMessageW(m_hListScene, LB_SETCURSEL, 0, 0);
+		}
+		return true;
+	}
+	if (focused == m_hListWays)
+	{
+		int sel_pos = (int)SendMessageW(m_hListWays, LB_GETCURSEL, 0, 0);
+		if (sel_pos == LB_ERR) return true;
+		if (pos_id_ways.count(sel_pos))
+		{
+			if (pos_id_ways[sel_pos] == 0)
+			{
+				MessageBeep(MB_OK);
+			}
+			else
+			{
+				int res_pos = pos_id_ways[sel_pos];
+				if (res_pos > 1000) res_pos -= 1000;
+				std::wstring res = std::to_wstring(res_pos);
+				if (!inv_save.empty()) { res = inv_save + L"," + res; inv_save.clear(); }
+				inv_save.clear(); // переход сбрасывает выбор предмета
+				int total_list_sz = (int)SendMessageW(m_hListWays, LB_GETCOUNT, 0, 0);
+				std::vector<wchar_t> selText(SendMessageW(m_hListWays, LB_GETTEXTLEN, sel_pos, 0) + 1);
+				SendMessageW(m_hListWays, LB_GETTEXT, sel_pos, (LPARAM)&selText[0]);
+				TryInsteadCommand(res, L"Переход в '" + std::wstring(&selText[0]) + L"'");
+				if ((int)SendMessageW(m_hListWays, LB_GETCOUNT, 0, 0) == total_list_sz)
+					SendMessageW(m_hListWays, LB_SETCURSEL, sel_pos, 0);
+				if (SendMessageW(m_hListWays, LB_GETCURSEL, 0, 0) == LB_ERR && SendMessageW(m_hListWays, LB_GETCOUNT, 0, 0) > 0)
+					SendMessageW(m_hListWays, LB_SETCURSEL, 0, 0);
+			}
+		}
+		return true;
+	}
+	if (focused == m_hListInv)
+	{
+		int sel_pos = (int)SendMessageW(m_hListInv, LB_GETCURSEL, 0, 0);
+		if (sel_pos == LB_ERR) return true;
+		if (pos_id_inv.count(sel_pos))
+		{
+			if (pos_id_inv[sel_pos] == 0)
+			{
+				MessageBeep(MB_OK);
+			}
+			else
+			{
+				bool isMenuItem = (pos_id_inv[sel_pos] > 1000);
+				std::wstring res = std::to_wstring(isMenuItem ? pos_id_inv[sel_pos] - 1000 : pos_id_inv[sel_pos]);
+				if (inv_save.empty() && !isMenuItem)
+				{
+					// first stage: take the item
+					inv_save = res;
+					std::vector<wchar_t> currText(SendMessageW(m_hListInv, LB_GETTEXTLEN, sel_pos, 0) + 1);
+					SendMessageW(m_hListInv, LB_GETTEXT, sel_pos, (LPARAM)&currText[0]);
+					savedSelInv = &currText[0];
+					std::wstring newText = savedSelInv + L" (выбор)";
+					SendMessageW(m_hListInv, LB_DELETESTRING, sel_pos, 0);
+					SendMessageW(m_hListInv, LB_INSERTSTRING, sel_pos, (LPARAM)newText.c_str());
+					SendMessageW(m_hListInv, LB_SETCURSEL, sel_pos, 0);
+				}
+				else
+				{
+					// second stage: use the item on the object
+					if (res != inv_save && !inv_save.empty()) res = inv_save + L"," + res;
+					inv_save.clear();
+					int total_list_sz = (int)SendMessageW(m_hListInv, LB_GETCOUNT, 0, 0);
+					std::vector<wchar_t> selText(SendMessageW(m_hListInv, LB_GETTEXTLEN, sel_pos, 0) + 1);
+					SendMessageW(m_hListInv, LB_GETTEXT, sel_pos, (LPARAM)&selText[0]);
+					TryInsteadCommand(res, L"Применяю '" + std::wstring(&selText[0]) + L"' к '" + savedSelInv + L"'");
+					if ((int)SendMessageW(m_hListInv, LB_GETCOUNT, 0, 0) == total_list_sz)
+						SendMessageW(m_hListInv, LB_SETCURSEL, sel_pos, 0);
+					else if (isMenuItem && (int)SendMessageW(m_hListInv, LB_GETCOUNT, 0, 0) > sel_pos)
+						SendMessageW(m_hListInv, LB_SETCURSEL, sel_pos, 0);
+					if (SendMessageW(m_hListInv, LB_GETCURSEL, 0, 0) == LB_ERR && SendMessageW(m_hListInv, LB_GETCOUNT, 0, 0) > 0)
+						SendMessageW(m_hListInv, LB_SETCURSEL, 0, 0);
+				}
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
+// pre-processing in the main message loop (replaces the MFC PreTranslateMessage)
+bool CPlainInsteadView::PreTranslateMessage(MSG* pMsg)
+{
+	if (!pMsg || !m_curView) return false;
+	// Ctrl+C / Ctrl+A in the output edit
+	if (pMsg->message == WM_KEYDOWN && ::GetKeyState(VK_CONTROL) < 0 && GetFocus() == m_hOutEdit)
+	{
+		switch (pMsg->wParam)
+		{
+		case L'C': SendMessageW(m_hOutEdit, WM_COPY, 0, 0); return true;
+		case L'A': SendMessageW(m_hOutEdit, EM_SETSEL, 0, -1); return true;
+		}
+		return false;
+	}
+	// Enter in the game lists
+	if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_RETURN)
+	{
+		HWND focused = GetFocus();
+		if (focused == m_hListScene || focused == m_hListInv || focused == m_hListWays)
+			return OnListEnter();
+	}
+	return false;
 }
 
 void CPlainInsteadView::InitFocusLogic()

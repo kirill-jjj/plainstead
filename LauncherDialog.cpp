@@ -59,6 +59,17 @@ LauncherDialog::LauncherDialog(HWND hWndParent)
 	m_sortNewUp = true;
 	m_sortInstalledLastItem = -1;
 	m_sortNewLastItem = -1;
+	m_running = false;
+	m_endCode = IDCANCEL;
+}
+
+// close the modal loop; hWnd may be the dialog or NULL
+void LauncherDialog::EndModal(HWND hWnd, INT_PTR code)
+{
+	m_endCode = code;
+	m_running = false;
+	if (hWnd && IsWindow(hWnd))
+		DestroyWindow(hWnd);
 }
 
 LauncherDialog::~LauncherDialog()
@@ -67,7 +78,34 @@ LauncherDialog::~LauncherDialog()
 
 INT_PTR LauncherDialog::DoModal(HWND hWndParent)
 {
-	return DialogBoxParamW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDD_LAUNCHERDIALOG), hWndParent, DlgProc, (LPARAM)this);
+	// dialog message loop with PreTranslateMessage support
+	// (DialogBoxParamW alone has no hook for keyboard shortcuts)
+	m_hWnd = hWndParent; // may be overwritten in OnInitDialog
+	HINSTANCE hInst = GetModuleHandleW(NULL);
+	HWND hDlg = CreateDialogParamW(hInst, MAKEINTRESOURCEW(IDD_LAUNCHERDIALOG), hWndParent, DlgProc, (LPARAM)this);
+	if (!hDlg)
+		return -1;
+	ShowWindow(hDlg, SW_SHOW);
+	EnableWindow(hWndParent, FALSE);
+	MSG msg;
+	INT_PTR result = IDCANCEL;
+	m_running = true;
+	while (m_running && GetMessageW(&msg, NULL, 0, 0))
+	{
+		if (PreTranslateMessage(&msg, hDlg))
+			continue;
+		if (!IsDialogMessageW(hDlg, &msg))
+		{
+			TranslateMessage(&msg);
+			DispatchMessageW(&msg);
+		}
+		if (!IsWindow(hDlg))
+			break;
+	}
+	result = m_endCode;
+	EnableWindow(hWndParent, TRUE);
+	SetFocus(hWndParent);
+	return result;
 }
 
 INT_PTR LauncherDialog::DlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -78,6 +116,7 @@ INT_PTR LauncherDialog::DlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	case WM_INITDIALOG:
 		SetWindowLongPtrW(hWnd, GWLP_USERDATA, lParam);
 		return ((LauncherDialog*)lParam)->OnInitDialog(hWnd);
+
 	case WM_SIZE:
 		// dialogs are not resizable; ignore
 		break;
@@ -88,7 +127,7 @@ INT_PTR LauncherDialog::DlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 		if (pThis) return pThis->OnNotify(hWnd, (NMHDR*)lParam);
 		break;
 	case WM_CLOSE:
-		EndDialog(hWnd, IDCANCEL);
+		if (pThis) pThis->EndModal(hWnd, IDCANCEL);
 		return TRUE;
 	}
 	return FALSE;
@@ -1026,7 +1065,7 @@ void LauncherDialog::OnBnClickedBtnInstall()
 			m_wantPlay = true;
 			m_stGamePath = m_gameBaseDir + L"\\" + gameName;
 			m_stGameTitle = gameTitle;
-			EndDialog(m_hWnd, -1);
+			EndModal(m_hWnd, -1);
 		}
 		return;
 	}
@@ -1056,7 +1095,7 @@ void LauncherDialog::OnBnClickedBtnPlayGamem()
 	ListView_GetItemText(m_hListInstalled, sel, N_SUBITEM_LIST_INSTALLED_CAPTION, gameTitle, 256);
 	m_stGameTitle = gameTitle;
 
-	EndDialog(m_hWnd, -1);
+	EndModal(m_hWnd, -1);
 }
 
 bool LauncherDialog::isWantStartGame()
@@ -1085,7 +1124,7 @@ void LauncherDialog::OnBnClickedBtnResumeoldGame2()
 	m_stGamePath = file;
 	m_stGameTitle = name;
 
-	EndDialog(m_hWnd, -1);
+	EndModal(m_hWnd, -1);
 }
 
 void LauncherDialog::OnCbnSelchangeComboFilter()
@@ -1188,9 +1227,8 @@ INT_PTR LauncherDialog::OnCommand(HWND hWnd, int id, int event, HWND hCtl)
 			OnCbnSelchangeComboFilter();
 		}
 		return TRUE;
-	case IDOK:
 	case IDCANCEL:
-		EndDialog(hWnd, IDCANCEL);
+		EndModal(hWnd, IDCANCEL);
 		return TRUE;
 	}
 	return FALSE;
