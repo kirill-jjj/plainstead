@@ -1,26 +1,30 @@
-#include "StdAfx.h"
+// MultiSpeech.cpp: implementation of the MultiSpeech class
+//
+
+#include "stdafx.h"
 #include "MultiSpeech.h"
 #include "Tolk.h"
 
 MultiSpeech::MultiSpeech()
 {
-	 Tolk_Load();
+	Tolk_Load();
 }
 
-void MultiSpeech::Say(CString text)
+void MultiSpeech::Say(const std::wstring& text)
 {
-	//Говорим всем чем только возможно
-	if (Tolk_HasSpeech()) 
+	// do not speak empty text
+	if (Tolk_HasSpeech())
 	{
-		 if (!Tolk_Output(text)) {
-			TRACE( L"Failed to output text" );
+		if (!Tolk_Output(text.c_str())) {
+			OutputDebugStringW(L"Failed to output text\n");
 		}
 	}
 }
 
-CString MultiSpeech::GetCurrentReader()
+std::wstring MultiSpeech::GetCurrentReader()
 {
-	CString res(Tolk_DetectScreenReader());
+	const wchar_t* reader = Tolk_DetectScreenReader();
+	std::wstring res(reader ? reader : L"");
 	return res;
 }
 

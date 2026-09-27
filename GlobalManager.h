@@ -1,50 +1,54 @@
+// GlobalManager.h: command / response history and misc global state
+//
+
 #pragma once
 
+#include "stdafx.h"
 #include <vector>
 
 class GlobalManager
 {
 public:
 	static GlobalManager& getInstance() {
-        static GlobalManager instance;
-        return instance;
-    }
-	void userStartGame(); //ѕользователь начал игру
-	void userSavedFile();  //ѕользователь сохранил файл
-	void userNewCommand(); //выполнение новой команды пользователем
-	bool isUserSaveLastFile(); //ѕризнак того, что пользователь сохранил игру
+		static GlobalManager instance;
+		return instance;
+	}
+	void userStartGame(); // user started a game
+	void userSavedFile();  // user saved the game
+	void userNewCommand(); // a new command was issued
+	bool isUserSaveLastFile(); // true when the last command was a save
 	bool isUserStartGame();
-	void appendCommandAndRespond(CString command, CString respond); //добавление команды с откликом
-	void appendCommand(CString command); //добавить новую команду
-	void appendLastRespond(CString command); //добавить последний ответ на команду
-	CString fullHistoryData(); //вс€ истори€ целиком (команда+ответ)
-	CString previosHistoryData(); //предыдущий элемент в истории (команда+ответ)
-	bool previosHistoryHave(); //наличие предыдущего элемента
-	CString nextHistoryData(); //следующий элемент в истории (команда+ответ)
-	bool nextHistoryHave(); //наличие следующего элемента
-	void enableHistory(bool isEn); //включение записи истории
+	void appendCommandAndRespond(std::wstring command, std::wstring respond); // append command and response to the history
+	void appendCommand(std::wstring command); // append a new command
+	void appendLastRespond(std::wstring command); // attach the latest response to the last command
+	std::wstring fullHistoryData(); // full history (command+response)
+	std::wstring previosHistoryData(); // step back in the history (command+response)
+	bool previosHistoryHave(); // is a previous step available
+	std::wstring nextHistoryData(); // step forward in the history (command+response)
+	bool nextHistoryHave(); // is a next step available
+	void enableHistory(bool isEn); // enable/disable the history
 
-	CString commandData(); //команда в истории
-	bool previosCommandMove(); //наличие предыдущей команда
-	bool nextCommandMove(); //наличие следующей команды
+	std::wstring commandData(); // current command
+	bool previosCommandMove(); // step to the previous command
+	bool nextCommandMove(); // step to the next command
 
-	bool isIgnoreExitDialog; //игнорировать диалог на выходе
-	bool isUseMenu(); //»спользуетс€ ли меню
-	bool isAutoMenuDetect(); //јвтоматическое определение меню
-	CString keyMenuString(); // лючева€ строка дл€ определени€ меню
+	bool isIgnoreExitDialog; // suppress the exit dialog
+	bool isUseMenu(); // the menu is used
+	bool isAutoMenuDetect(); // auto-detect the menu
+	std::wstring keyMenuString(); // menu detection key string
 	void setUseMenu();
 	static int lastString;
 private:
 	GlobalManager();
 	~GlobalManager();
-	GlobalManager( const GlobalManager&);  
-    GlobalManager& operator=( GlobalManager& );
+	GlobalManager(const GlobalManager&);
+	GlobalManager& operator=(const GlobalManager&);
 
 	bool m_haveFileSaved;
 	bool m_userStartGame;
-	std::vector< std::pair<CString/*command*/,CString/*respond*/> > commandHistory; //истори€ команд
-	int m_currHistPos; //текущий указатель в истории
-	int m_currCmdPos; //текущий указатель в командах
+	std::vector< std::pair<std::wstring/*command*/, std::wstring/*respond*/> > commandHistory; // command history
+	int m_currHistPos; // current position in the history
+	int m_currCmdPos; // current position in the command list
 	bool m_useMenu;
 	bool m_en_history;
 };

@@ -1,55 +1,37 @@
-#if !defined(AFX_INIFILE_H__59955693_F4CE_4E47_9D52_EEA1B6E8F706__INCLUDED_)
-#define AFX_INIFILE_H__59955693_F4CE_4E47_9D52_EEA1B6E8F706__INCLUDED_
-
-#if _MSC_VER > 1000
-#pragma once
-#endif // _MSC_VER > 1000
-// IniFile.h : header file
+// IniFile.h: simple wrapper over the Windows INI file API (WritePrivateProfileString / GetPrivateProfileString)
 //
 
-/////////////////////////////////////////////////////////////////////////////
-// CIniFile command target
+#pragma once
 
-class CIniFile : public CObject
+#include "stdafx.h"
+
+class CIniFile
 {
 public:
 	CIniFile(LPCTSTR lpIniFileName, INT iMaxStringLength);
-	CIniFile(); //название settings.ini возле экзешника
+	CIniFile(); // opens settings.ini next to the executable
 	virtual ~CIniFile();
 
-// Attributes
 protected:
-	CString		m_strFileName;	// path to the INI file
-	const INT	m_MAXSTRLEN;	// max length of a string (excluding the key name) that can be wtritten/read to/from the INI file by this instance
+	std::wstring m_strFileName;	// path to the INI file
+	const INT	m_MAXSTRLEN;	// max length of a string (excluding the key name) that can be written/read to/from the INI file by this instance
 
-// Implementation	
+// Implementation
 public:
-	CString	GetIniFileName();
+	std::wstring GetIniFileName() const;
 	void	SetIniFileName(LPCTSTR lpIniFileName);
-	BOOL	GetStatus(CFileStatus& rStatus);
 
-	BOOL	GetString(LPCTSTR lpSection, LPCTSTR lpKey, CString& strRet, LPCTSTR strDefault);
-	UINT	GetInt(LPCTSTR lpSection, LPCTSTR lpKey, INT iDefaultValue);	
+	BOOL	GetString(LPCTSTR lpSection, LPCTSTR lpKey, std::wstring& strRet, LPCTSTR strDefault);
+	UINT	GetInt(LPCTSTR lpSection, LPCTSTR lpKey, INT iDefaultValue);
 	FLOAT	GetFloat(LPCTSTR lpSection, LPCTSTR lpKey, FLOAT fDefaultValue);
 	BOOL	GetStruct(LPCTSTR lpSection, LPCTSTR lpKey, LPVOID lpRetStruct, UINT iSizeStruct);
-	void	GetSectionNames(CStringList& lstSectionNames);
+	void	GetSectionNames(std::vector<std::wstring>& lstSectionNames);
 
-	
-	BOOL	WriteSection(LPCTSTR lpSection, LPCTSTR lpData); 
+	BOOL	WriteSection(LPCTSTR lpSection, LPCTSTR lpData);
 	BOOL	WriteString(LPCTSTR lpSection, LPCTSTR lpKey, LPCTSTR lpString);
 	BOOL	WriteNumber(LPCTSTR lpSection, LPCTSTR lpKey, INT iValue);
 	BOOL	WriteNumber(LPCTSTR lpSection, LPCTSTR lpKey, FLOAT fValue);
 	BOOL	WriteStruct(LPCTSTR lpSection, LPCTSTR lpKey, LPVOID lpStruct, UINT iSizeStruct);
 
 	BOOL	RemoveKey(LPCTSTR lpSection, LPCTSTR lpKey);
-
-protected:
-	BOOL	GetString(LPCTSTR lpSection, LPCTSTR lpKey, CString& strRet, LPCTSTR strDefault, DWORD iSize);
 };
-
-/////////////////////////////////////////////////////////////////////////////
-
-//{{AFX_INSERT_LOCATION}}
-// Microsoft Visual C++ will insert additional declarations immediately before the previous line.
-
-#endif // !defined(AFX_INIFILE_H__59955693_F4CE_4E47_9D52_EEA1B6E8F706__INCLUDED_)

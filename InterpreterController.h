@@ -1,23 +1,24 @@
 #pragma once
 
+#include "stdafx.h"
+
 class InterpreterController
 {
 public:
-    InterpreterController(void);
-    ~InterpreterController(void);
-    static void startGameFile(CString gameFile, CString gameName, int autolog);//установить игровой файл
-    static CString RunInterpreter(CString command); //Запуск интерпретатора, с определенной игрой и командой на обработку
+	InterpreterController(void);
+	~InterpreterController(void);
+	static void startGameFile(const std::wstring& gameFile, const std::wstring& gameName, int autolog); // start the game from a file
+	static std::wstring RunInterpreter(const std::wstring& command); // start the interpreter; the command is remembered but not executed
 	static void endInterpreter();
-	static bool loadSave(CString fname); //Загрузить сохранение
-	static bool saveGame(CString fname); //Сохранить игру
-	static bool wasNewCommand(); //Была получена новая команда от игрока
-	static void clearNewCommandFlag(); //очистить флаг новой команды
-	static CString lastCommand(); //последняя команда от игрока
-protected:
-	static void startGameFile(CString gameFile, CString gameName, CString saveFile, int autolog);
+	static bool loadSave(const std::wstring& fname); // load a save
+	static bool saveGame(const std::wstring& fname); // save the game
+	static bool wasNewCommand(); // is there a new command to process
+	static void clearNewCommandFlag(); // reset the new command flag
+	static std::wstring lastCommand(); // the last command
 private:
-    static CString m_gameFile;
-	static CString m_lastCommand;
+	static void startGameFile(const std::wstring& gameFile, const std::wstring& gameName, const std::wstring& saveFile, int autolog);
+private:
+	static std::wstring m_gameFile;
+	static std::wstring m_lastCommand;
 	static bool m_wasCommand;
 };
-

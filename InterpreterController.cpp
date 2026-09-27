@@ -1,20 +1,17 @@
+// InterpreterController.cpp: implementation of the InterpreterController class
+//
+
 #include "stdafx.h"
 #include "InterpreterController.h"
-#include <windows.h>
-#include <Tlhelp32.h>
-#include <atlconv.h>
-#include <afxconv.h>
 #include <string>
 
 extern "C" {
-	#include "instead\instead.h"
+#include "instead/instead.h"
 }
 
-#pragma setlocale("Russian_Russia.1251")
-
-CString InterpreterController::m_gameFile=L"";
-CString InterpreterController::m_lastCommand=L"";
-bool InterpreterController::m_wasCommand=false;
+std::wstring InterpreterController::m_gameFile = L"";
+std::wstring InterpreterController::m_lastCommand = L"";
+bool InterpreterController::m_wasCommand = false;
 
 InterpreterController::InterpreterController(void)
 {
@@ -24,46 +21,43 @@ InterpreterController::InterpreterController(void)
 InterpreterController::~InterpreterController(void)
 {
 }
-/*
-static void killProcessByName(CString filename)
-{
-    HANDLE hSnapShot = CreateToolhelp32Snapshot(TH32CS_SNAPALL, NULL);
-    PROCESSENTRY32 pEntry;
-    pEntry.dwSize = sizeof (pEntry);
-    BOOL hRes = Process32First(hSnapShot, &pEntry);
-    while (hRes)
-    {
-        if (wcscmp(pEntry.szExeFile, filename) == 0)
-        {
-            HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, 0,
-                                          (DWORD) pEntry.th32ProcessID);
-            if (hProcess != NULL)
-            {
-                TerminateProcess(hProcess, 9);
-                CloseHandle(hProcess);
-            }
-        }
-        hRes = Process32Next(hSnapShot, &pEntry);
-    }
-    CloseHandle(hSnapShot);
-}
-*/
 
-void InterpreterController::startGameFile(CString gameFile, CString gameName, int autolog)
+static std::string utf8_from_wide(const std::wstring& wstr)
 {
-    startGameFile(gameFile,gameName,L"",autolog); 
+	if (wstr.empty()) return std::string();
+	int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
+	std::string strTo(size_needed, 0);
+	WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
+	return strTo;
 }
 
-HANDLE hMachine = NULL;
-DWORD tidMachine = 0;
-
-void InterpreterController::startGameFile(CString gameFile, CString gameName, CString saveFile, int autolog)
+static std::wstring utf8_to_wide(const char* s)
 {
-	//TODO: добавить старт игры
-	CT2A ascii(gameFile);
+	if (!s || !*s) return std::wstring();
+	int size_needed = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
+	std::wstring wTo(size_needed, 0);
+	MultiByteToWideChar(CP_UTF8, 0, s, -1, &wTo[0], size_needed);
+	if (!wTo.empty() && wTo.back() == 0) wTo.pop_back();
+	return wTo;
+}
+
+void InterpreterController::startGameFile(const std::wstring& gameFile, const std::wstring& gameName, int autolog)
+{
+	startGameFile(gameFile, gameName, L"", autolog);
+}
+
+void InterpreterController::startGameFile(const std::wstring& gameFile, const std::wstring& gameName, const std::wstring& saveFile, int autolog)
+{
+	// TODO: run the game in a thread
+	std::string ascii = utf8_from_wide(gameFile);
 	instead_done();
 	instead_set_debug(1);
-	if (instead_init(ascii)==0)
+	if (instead_init(ascii.c_str()) != 0)
+	{
+		MessageBoxW(NULL, (L"РќРµ СѓРґР°Р»РѕСЃСЊ РёРЅРёС†РёР°Р»РёР·РёСЂРѕРІР°С‚СЊ РёРіСЂСѓ:\n" + gameFile + L"\n\n" + utf8_to_wide(instead_err())).c_str(),
+			L"РћС€РёР±РєР°", MB_OK | MB_ICONERROR);
+		return;
+	}
 	{
 		char *str;
 		if (instead_load(&str) == 0)
@@ -72,41 +66,46 @@ void InterpreterController::startGameFile(CString gameFile, CString gameName, CS
 			m_lastCommand = L"";
 			m_wasCommand = true;
 		}
+		else
+		{
+			MessageBoxW(NULL, (L"РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёРіСЂСѓ:\n" + gameFile + L"\n\n" + utf8_to_wide(instead_err())).c_str(),
+				L"РћС€РёР±РєР°", MB_OK | MB_ICONERROR);
+		}
 	}
 }
 
-CString InterpreterController::RunInterpreter(CString command)
+std::wstring InterpreterController::RunInterpreter(const std::wstring& command)
 {
-    CString Result;
+	std::wstring Result;
 
-    //Добавляем команду, на выдачу в интерпретатор
-	CT2A ascii(command);
-    //writeToCommonOut(ascii);
+	// save the command, but do not execute it here
 	m_lastCommand = command;
 	m_wasCommand = true;
 
-    return Result;
+	return Result;
 }
 
 void InterpreterController::endInterpreter()
 {
-	//killProcessByName(L"t2r32.exe");
 }
-//Загрузка сохранения в интерпретатор
-bool InterpreterController::loadSave(CString fname)
+
+// run the interpreter with a save file
+bool InterpreterController::loadSave(const std::wstring& fname)
 {
-	startGameFile(m_gameFile,fname,1);
+	startGameFile(m_gameFile, fname, 1);
 	return true;
 }
 
-bool InterpreterController::saveGame(CString fname)
+bool InterpreterController::saveGame(const std::wstring& fname)
 {
-	return CopyFile(L"temp\\last.sav",fname,FALSE);
+	return CopyFileW(L"temp\\last.sav", fname.c_str(), FALSE);
 }
-CString InterpreterController::lastCommand()
+
+std::wstring InterpreterController::lastCommand()
 {
 	return m_lastCommand;
 }
+
 void InterpreterController::clearNewCommandFlag()
 {
 	m_wasCommand = false;
@@ -116,40 +115,4 @@ void InterpreterController::clearNewCommandFlag()
 bool InterpreterController::wasNewCommand()
 {
 	return m_wasCommand;
-}
-
-static bool Utf8ToCString( CString& cstr, const char* utf8Str )
-{
-    size_t utf8StrLen = strlen(utf8Str);
-
-    if( utf8StrLen == 0 )
-    {
-        cstr.Empty();
-        return true;
-    }
-
-    LPWSTR ptr = cstr.GetBuffer(utf8StrLen+1);
-
-    // CString is UNICODE string so we decode
-    int newLen = MultiByteToWideChar(
-                     CP_UTF8,  0,
-                     utf8Str, utf8StrLen,  ptr, utf8StrLen+1
-                     );
-    if( !newLen )
-    {
-        cstr.ReleaseBuffer(0);
-        return false;
-    }
-
-    cstr.ReleaseBuffer(newLen);
-    return true;
-}
-
-std::string utf8_encode(const std::wstring &wstr)
-{
-    if( wstr.empty() ) return std::string();
-    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
-    std::string strTo( size_needed, 0 );
-    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
-    return strTo;
 }

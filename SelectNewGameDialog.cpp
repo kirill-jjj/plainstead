@@ -1,171 +1,192 @@
-// SelectNewGameDialog.cpp: файл реализации
+п»ї// SelectNewGameDialog.cpp : "select game" dialog implementation (pure Win32)
 //
 
 #include "stdafx.h"
-#include "PlainInstead.h"
+#include "resource.h"
 #include "SelectNewGameDialog.h"
 #include "IniFile.h"
 
-
-// диалоговое окно CSelectNewGameDialog
-
-IMPLEMENT_DYNAMIC(CSelectNewGameDialog, CDialog)
-
-CSelectNewGameDialog::CSelectNewGameDialog(CString& selGameFile, CString& selName, bool& selLastGame, CWnd* pParent /*=NULL*/)
-	: CDialog(CSelectNewGameDialog::IDD, pParent),
-	m_selGameFile(selGameFile),
+CSelectNewGameDialog::CSelectNewGameDialog(std::wstring& selGameFile, std::wstring& selName, bool& selLastGame)
+	: m_selGameFile(selGameFile),
 	m_selName(selName),
 	m_bSelectLastGame(selLastGame)
 {
-
 }
 
 CSelectNewGameDialog::~CSelectNewGameDialog()
 {
 }
 
-void CSelectNewGameDialog::DoDataExchange(CDataExchange* pDX)
+INT_PTR CSelectNewGameDialog::DoModal(HWND hWndParent)
 {
-	CDialog::DoDataExchange(pDX);
-	DDX_Control(pDX, IDC_LIST_GAMES, m_ListGames);
-	DDX_Control(pDX, IDC_EDIT_ABOUT, m_GamesDescr);
+	return DialogBoxParamW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDD_DIALOG_NEW_GAME), hWndParent, DlgProc, (LPARAM)this);
 }
 
-
-BEGIN_MESSAGE_MAP(CSelectNewGameDialog, CDialog)
-	ON_WM_SIZE()
-	ON_LBN_SELCHANGE(IDC_LIST_GAMES, &CSelectNewGameDialog::OnLbnSelchangeListGames)
-	ON_BN_CLICKED(IDOK, &CSelectNewGameDialog::OnBnClickedOk)
-	ON_BN_CLICKED(IDC_BUTTON_START_LAST_GAME, &CSelectNewGameDialog::OnBnClickedButtonStartLastGame)
-END_MESSAGE_MAP()
-
-
-// обработчики сообщений CSelectNewGameDialog
-
-void CSelectNewGameDialog::OnSize(UINT nType, int cx, int cy)
+INT_PTR CSelectNewGameDialog::DlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	CDialog::OnSize(nType, cx, cy);
-
-	// Автомасштабирование компонентов
-	const int contHeight = 20;
-	if (m_ListGames.m_hWnd) m_ListGames.SetWindowPos(NULL, 0, contHeight, cx, (cy-contHeight*2)/2, SWP_NOACTIVATE | SWP_NOZORDER);
-    if (m_GamesDescr.m_hWnd) m_GamesDescr.SetWindowPos(NULL, 0, (cy-contHeight*2)/2, cx, cy/2-contHeight, SWP_NOACTIVATE | SWP_NOZORDER);
-}
-
-static void ListFilesGamInDirectory(LPCTSTR dirName,std::vector<CString> & filepaths )
-{
-	// Check input parameters
-	ASSERT( dirName != NULL );
-	// Clear filename list
-	filepaths.clear();
-	// Object to enumerate files
-	CFileFind finder;
-	// Build a string using wildcards *.*,
-	// to enumerate content of a directory
-	CString wildcard( dirName );
-	wildcard += _T("\\*.*");
-	// Init the file finding job
-	BOOL working = finder.FindFile( wildcard );
-	// For each file that is found:
-	while ( working )
+	CSelectNewGameDialog* pThis = (CSelectNewGameDialog*)GetWindowLongPtrW(hWnd, GWLP_USERDATA);
+	switch (message)
 	{
-		// Update finder status with new file
-		working = finder.FindNextFile();
-		// Skip '.' and '..'
-		if ( finder.IsDots() )
-		{
-		continue;
-		}
-		// Skip sub-directories
-		if ( finder.IsDirectory() )
-		{
-			// Add file path to container
-			filepaths.push_back(finder.GetFileName());
-			continue;
-		}
+	case WM_INITDIALOG:
+		SetWindowLongPtrW(hWnd, GWLP_USERDATA, lParam);
+		return ((CSelectNewGameDialog*)lParam)->OnInitDialog(hWnd);
+	case WM_SIZE:
+		if (pThis) pThis->OnSize(hWnd, LOWORD(lParam), HIWORD(lParam));
+		return TRUE;
+	case WM_COMMAND:
+		if (pThis) return pThis->OnCommand(hWnd, LOWORD(wParam), HIWORD(wParam), (HWND)lParam);
+		break;
 	}
-	// Cleanup file finder
-	finder.Close();
+	return FALSE;
 }
 
-
-BOOL CSelectNewGameDialog::OnInitDialog()
+static void ListDirsInDirectory(LPCTSTR dirName, std::vector<std::wstring>& filepaths)
 {
-	CDialog::OnInitDialog();
-
-	std::vector< CString > filePaths;
-	//GetCurrentDirectory( MAX_PATH, CStrBuf(dir, MAX_PATH) );
-	TCHAR buff[MAX_PATH];
-	memset(buff, 0, MAX_PATH);
-	::GetModuleFileName(NULL, buff, sizeof(buff));
-	baseDir = buff;
-	baseDir = baseDir.Left(baseDir.ReverseFind(_T('\\')) + 1);
-	CString dir = baseDir + L"\\games";
-	ListFilesGamInDirectory( dir, filePaths );
-	//Обновление поля выбора игр
-	CIniFile iniFile(baseDir+L"\\games\\info.ini", 1024);
-	for ( size_t i = 0; i < filePaths.size(); i++ )
+	filepaths.clear();
+	std::wstring wildcard(dirName);
+	wildcard += L"\\*.*";
+	WIN32_FIND_DATAW fd;
+	HANDLE hFind = FindFirstFileW(wildcard.c_str(), &fd);
+	if (hFind != INVALID_HANDLE_VALUE)
 	{
-		CString strName;
-		iniFile.GetString(L"game_name", filePaths[i], strName, L"");
-		if (strName.GetLength()>0)
+		do
 		{
-			m_ListGames.AddString(strName);
-			CString strDescr;
-			iniFile.GetString(L"game_desc", filePaths[i], strDescr, L"Нет данных");
-			fileNameDescr.push_back(std::make_pair(filePaths[i],strDescr));
-			if (i==0)
+			if (fd.cFileName[0] == L'.')
+				continue;
+			if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
 			{
-				m_GamesDescr.SetWindowTextW(strDescr);
+				filepaths.push_back(fd.cFileName);
+				continue;
 			}
+		} while (FindNextFileW(hFind, &fd));
+		FindClose(hFind);
+	}
+}
 
+INT_PTR CSelectNewGameDialog::OnInitDialog(HWND hWnd)
+{
+	std::vector<std::wstring> filePaths;
+	HWND hList = GetDlgItem(hWnd, IDC_LIST_GAMES);
+	HWND hDescr = GetDlgItem(hWnd, IDC_EDIT_ABOUT);
+
+	TCHAR buff[MAX_PATH];
+	memset(buff, 0, sizeof(buff));
+	::GetModuleFileNameW(NULL, buff, MAX_PATH);
+	baseDir = buff;
+	baseDir = baseDir.substr(0, baseDir.find_last_of(L'\\') + 1);
+	std::wstring dir = baseDir + L"\\games";
+	ListDirsInDirectory(dir.c_str(), filePaths);
+
+	// С‡РёС‚Р°РµРј РЅР°Р·РІР°РЅРёСЏ РёРіСЂ РёР· ini
+	CIniFile iniFile((baseDir + L"\\games\\info.ini").c_str(), 1024);
+	for (size_t i = 0; i < filePaths.size(); i++)
+	{
+		std::wstring strName;
+		iniFile.GetString(L"game_name", filePaths[i].c_str(), strName, L"");
+		if (!strName.empty())
+		{
+			SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)strName.c_str());
+			std::wstring strDescr;
+			iniFile.GetString(L"game_desc", filePaths[i].c_str(), strDescr, L"РќРµС‚ РѕРїРёСЃР°РЅРёСЏ");
+			fileNameDescr.push_back(std::make_pair(filePaths[i], strDescr));
+			if (i == 0)
+			{
+				SetWindowTextW(hDescr, strDescr.c_str());
+			}
 		}
 		else
 		{
-			m_ListGames.AddString(filePaths[i]);
-			fileNameDescr.push_back(std::make_pair(filePaths[i],L"Нет данных"));
+			SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)filePaths[i].c_str());
+			fileNameDescr.push_back(std::make_pair(filePaths[i], L"РќРµС‚ РѕРїРёСЃР°РЅРёСЏ"));
 		}
 	}
 
-	m_ListGames.SetCurSel(0);
-	m_ListGames.SetFocus();
+	SendMessageW(hList, LB_SETCURSEL, 0, 0);
+	SetFocus(hList);
 
-	return FALSE;   // Возвратить TRUE, если Вы не устанавливаете фокус ввода к элементу управления
-}
-
-void CSelectNewGameDialog::OnLbnSelchangeListGames()
-{
-	// TODO: добавьте свой код обработчика уведомлений
-	if (m_ListGames.GetCurSel()<fileNameDescr.size())
-		m_GamesDescr.SetWindowTextW(fileNameDescr[m_ListGames.GetCurSel()].second);
-	else
-		m_GamesDescr.SetWindowTextW(L"");
-}
-
-void CSelectNewGameDialog::OnBnClickedOk()
-{
-	// TODO: добавьте свой код обработчика уведомлений
-	if (m_ListGames.GetCurSel() >= 0 && m_ListGames.GetCurSel()<fileNameDescr.size())
+	// size the dialog to fill the parent area proportionally
+	RECT rcParent, rcDlg;
+	if (hWnd && GetParent(hWnd) && GetWindowRect(GetParent(hWnd), &rcParent))
 	{
-		m_selGameFile = baseDir + L"games\\";
-		m_selGameFile.Append(fileNameDescr[m_ListGames.GetCurSel()].first);
-		m_ListGames.GetText(m_ListGames.GetCurSel(),m_selName);
-		m_bSelectLastGame = false;
+		int cx = rcParent.right - rcParent.left;
+		int cy = rcParent.bottom - rcParent.top;
+		SetWindowPos(hWnd, NULL, 0, 0, cx, cy, SWP_NOMOVE | SWP_NOZORDER);
 	}
-	else
+	GetWindowRect(hWnd, &rcDlg);
+	OnSize(hWnd, rcDlg.right - rcDlg.left, rcDlg.bottom - rcDlg.top);
+
+	return FALSE;   // we set the focus ourselves
+}
+
+void CSelectNewGameDialog::OnSize(HWND hWnd, int cx, int cy)
+{
+	// РїСЂРѕРїРѕСЂС†РёРѕРЅР°Р»СЊРЅРѕРµ СЂР°СЃС‚СЏР¶РµРЅРёРµ РєРѕРЅС‚СЂРѕР»РѕРІ
+	const int contHeight = 20;
+	HWND hList = GetDlgItem(hWnd, IDC_LIST_GAMES);
+	HWND hDescr = GetDlgItem(hWnd, IDC_EDIT_ABOUT);
+	if (hList) SetWindowPos(hList, NULL, 0, contHeight, cx, (cy - contHeight * 2) / 2, SWP_NOACTIVATE | SWP_NOZORDER);
+	if (hDescr) SetWindowPos(hDescr, NULL, 0, (cy - contHeight * 2) / 2, cx, cy / 2 - contHeight, SWP_NOACTIVATE | SWP_NOZORDER);
+}
+
+INT_PTR CSelectNewGameDialog::OnCommand(HWND hWnd, int id, int event, HWND hCtl)
+{
+	HWND hList = GetDlgItem(hWnd, IDC_LIST_GAMES);
+	HWND hDescr = GetDlgItem(hWnd, IDC_EDIT_ABOUT);
+	switch (id)
 	{
+	case IDC_LIST_GAMES:
+		if (event == LBN_SELCHANGE)
+		{
+			int sel = (int)SendMessageW(hList, LB_GETCURSEL, 0, 0);
+			if (sel >= 0 && sel < (int)fileNameDescr.size())
+				SetWindowTextW(hDescr, fileNameDescr[sel].second.c_str());
+			else
+				SetWindowTextW(hDescr, L"");
+		}
+		else if (event == LBN_DBLCLK)
+		{
+			// double click = OK
+			OnCommand(hWnd, IDOK, 0, hCtl);
+		}
+		return TRUE;
+	case IDOK:
+	{
+		int sel = (int)SendMessageW(hList, LB_GETCURSEL, 0, 0);
+		if (sel >= 0 && sel < (int)fileNameDescr.size())
+		{
+			m_selGameFile = baseDir + L"games\\";
+			m_selGameFile.append(fileNameDescr[sel].first);
+			int n = (int)SendMessageW(hList, LB_GETTEXTLEN, sel, 0);
+			std::vector<wchar_t> name(n + 1);
+			SendMessageW(hList, LB_GETTEXT, sel, (LPARAM)&name[0]);
+			m_selName = &name[0];
+			m_bSelectLastGame = false;
+		}
+		else
+		{
+			m_selGameFile = L"";
+			m_selName = L"";
+		}
+		EndDialog(hWnd, IDOK);
+		return TRUE;
+	}
+	case IDC_BUTTON_START_LAST_GAME:
+	{
+		m_bSelectLastGame = true;
+		CIniFile mainSettings;
+		std::wstring file, name;
+		mainSettings.GetString(L"main", L"lastGameFile", file, L"");
+		mainSettings.GetString(L"main", L"lastGameName", name, L"");
+		m_selGameFile = file;
+		m_selName = name;
+		EndDialog(hWnd, IDOK);
+		return TRUE;
+	}
+	case IDCANCEL:
 		m_selGameFile = L"";
 		m_selName = L"";
+		EndDialog(hWnd, IDCANCEL);
+		return TRUE;
 	}
-	OnOK();
-}
-
-void CSelectNewGameDialog::OnBnClickedButtonStartLastGame()
-{
-	// TODO: добавьте свой код обработчика уведомлений
-	m_bSelectLastGame = true;
-	CIniFile mainSettings;
-	mainSettings.GetString(L"main", L"lastGameFile", m_selGameFile, L"");
-	mainSettings.GetString(L"main", L"lastGameName", m_selName, L"");
-	OnOK();
+	return FALSE;
 }

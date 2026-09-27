@@ -1,55 +1,42 @@
 /*|*\
-|*|  File:      FocusEditCtrl.h
-|*|  
+|*|  File:      ColorPickerCB.h
 |*|  By:        James R. Twine
 |*|             Copyright 1998, James R. Twine
 |*|             Copyright 1999-2000, TransactionWorks, Inc.
-|*|  Date:      xxxx, xxxx, 1998
-|*|             
-|*|             This implementes a ComboBox control that can be
+|*|  Ported to pure Win32 (no MFC).
+|*|
+|*|             This implements a ComboBox control that can be
 |*|             used to display and provide selection for a specific
-|*|             set of colors.  The standard set of colors provided
+|*|             set of colors. The standard set of colors provided
 |*|             by the control are a subset of the X11 colorset, and
-|*|             are the ones available in (and the color names 
-|*|				recognized by) Internet Explorer.
-|*|             
-|*|				The ComboBox that is subclassed must have the 
-|*|             Owner Draw Fixed and Has Strings styles.
-|*|             
+|*|             are the ones available in (and the color names
+|*|             recognized by) Internet Explorer.
+|*|
+|*|             The ComboBox must have the Owner Draw Fixed and
+|*|             Has Strings styles.
+|*|
 |*|             This is based on code that was originally found on
-|*|             CodeGuru, and was © 1997 Baldvin Hansson.
-|*|             
-|*|             A bug fix by Marcel Galem was added to provide
-|*|             correct masking of the COLORREF values.
-|*|             
-|*|             DDX routines were provided by Paul Wardle
-|*|             (paul.wardle@siemenscomms.co.uk)
-|*|             
-|*|             This Code May Be Freely Incorporated Into 
-|*|             Projects Of Any Type Subject To The Following 
+|*|             CodeGuru, and was (c) 1997 Baldvin Hansson.
+|*|
+|*|             This Code May Be Freely Incorporated Into
+|*|             Projects Of Any Type Subject To The Following
 |*|             Conditions:
-|*|             
+|*|
 |*|             o This Header Must Remain In This File, And Any
 |*|               Files Derived From It
-|*|             o Do Not Misrepresent The Origin Of Any Parts Of 
+|*|             o Do Not Misrepresent The Origin Of Any Parts Of
 |*|               This Code (IOW, Do Not Claim You Wrote It)
-|*|             
-|*|             A "Mention In The Credits", Or Similar Acknowledgement,
-|*|             Is *NOT* Required.  It Would Be Nice, Though! :)
-|*|	
+|*|
 \*|*/
-#if !defined(AFX_COLORPICKERCB_H__C74333B7_A13A_11D1_ADB6_C04D0BC10000__INCLUDED_)
-#define AFX_COLORPICKERCB_H__C74333B7_A13A_11D1_ADB6_C04D0BC10000__INCLUDED_
+#if !defined(COLORPICKERCB_H__C74333B7_A13A_11D1_ADB6_C04D0BC10000__INCLUDED_)
+#define COLORPICKERCB_H__C74333B7_A13A_11D1_ADB6_C04D0BC10000__INCLUDED_
 
-#if _MSC_VER >= 1000
-#pragma once
-#endif // _MSC_VER >= 1000
+#include "stdafx.h"
 
 //
 //	Constants...
 //
-#define		CCB_MAX_COLOR_NAME		32							// Max Chars For Color Name - 1
-
+#define		CCB_MAX_COLOR_NAME		32						// Max Chars For Color Name - 1
 
 //
 //	Macros...
@@ -58,89 +45,66 @@
 #define		COUNTOF( Array )	( ( sizeof( Array ) / sizeof( Array[ 0 ] ) ) )
 #endif
 
-
-
 //
 //	Internal Structure For Color/Name Storage...
 //
 struct	SColorAndName
 {
-	/**/	SColorAndName()									// Default Constructor
+	SColorAndName()													// Default Constructor
 	{
-		memset( this, 0, sizeof( SColorAndName ) );			// Init Structure
+		memset( this, 0, sizeof( SColorAndName ) );					// Init Structure
 	};
-	/**/	SColorAndName( COLORREF crColor, 
-					LPCTSTR cpColor ) : m_crColor( crColor )// Smart Constructor
+	SColorAndName( COLORREF crColor,
+		const wchar_t* cpColor ) : m_crColor( crColor )			// Smart Constructor
 	{
-		_tcsncpy( m_cColor, cpColor, CCB_MAX_COLOR_NAME );	// Set Color Name
-		m_cColor[ CCB_MAX_COLOR_NAME - 1 ] = _T( '\0' );	// Just To Make Sure...
+		wcsncpy_s( m_cColor, CCB_MAX_COLOR_NAME, cpColor, CCB_MAX_COLOR_NAME - 1 );	// Set Color Name
+		m_cColor[ CCB_MAX_COLOR_NAME - 1 ] = L'\0';					// Just To Make Sure...
 	};
-	COLORREF	m_crColor;									// Actual Color RGB Value
-	TCHAR		m_cColor[ CCB_MAX_COLOR_NAME ];				// Actual Name For Color
+	COLORREF	m_crColor;											// Actual Color RGB Value
+	wchar_t		m_cColor[ CCB_MAX_COLOR_NAME ];						// Actual Name For Color
 };
 
-
-class CColorPickerCB : public CComboBox
+// A Win32 helper that wraps a plain HCBT combobox HWND and implements
+// the owner-draw color picker functionality of the old MFC CColorPickerCB.
+class CColorPickerCB
 {
 public:
-	/**/	CColorPickerCB();								// Constructor
-	virtual	~CColorPickerCB();								// Destructor
+	CColorPickerCB();
+	virtual	~CColorPickerCB();
 
-public:
-	void			InitializeDefaultColors( void );		// Initialize Control With Default Colors
+	// attach to an existing combobox control inside a dialog
+	void Attach(HWND hCombo);
+	HWND GetHwnd() const { return m_hCombo; }
 
-	COLORREF		GetSelectedColorValue( void );			// Get Selected Color Value
-	LPCTSTR			GetSelectedColorName( void );			// Get Selected Color Name
+	void			InitializeDefaultColors( void );			// Initialize Control With Default Colors
 
-	void			SetSelectedColorValue( COLORREF crClr );// Set Selected Color Value
-	void			SetSelectedColorName( LPCTSTR cpColor );// Set Selected Color Name
+	COLORREF		GetSelectedColorValue( void );				// Get Selected Color Value
+	std::wstring	GetSelectedColorName( void );				// Get Selected Color Name
 
-	bool			RemoveColor( LPCTSTR cpColor );			// Remove Color From List
-	bool			RemoveColor( COLORREF crClr );			// Remove Color From List
-	
-	int				AddColor( LPCTSTR cpName, 
-							COLORREF crColor );				// Add A New Color
+	void			SetSelectedColorValue( COLORREF crClr );	// Set Selected Color Value
+	void			SetSelectedColorName( const std::wstring& sName );	// Set Selected Color Name
 
+	bool			RemoveColor( const std::wstring& sColor );	// Remove Color From List
+	bool			RemoveColor( COLORREF crClr );				// Remove Color From List
 
-	void			DDX_ColorPicker( CDataExchange *pDX, 
-							int iIDC, COLORREF &crColor );	// DDX Function For COLORREF Value
+	int				AddColor( const std::wstring& sName,
+		COLORREF crColor );									// Add A New Color
 
-	void			DDX_ColorPicker( CDataExchange *pDX, 
-							int iIDC, CString &sName );		// DDX Function For Color Name
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CColorPickerCB)
-	protected:
-	virtual void PreSubclassWindow();
-	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
-	//}}AFX_VIRTUAL
-	virtual void DrawItem(LPDRAWITEMSTRUCT lpDrawItemStruct);
-
-
-	// Generated message map functions
-protected:
-	//{{AFX_MSG(CColorPickerCB)
-	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	// owner draw helpers; call them from the dialog proc on
+	// WM_MEASUREITEM / WM_DRAWITEM for the picker's combo box ids
+	static void MeasureItem(HWND hCombo, LPMEASUREITEMSTRUCT lpMIS);
+	static void DrawItem(HWND hCombo, LPDRAWITEMSTRUCT lpDIS);
 
 private:
-	static
-	SColorAndName	ms_pColors[];							// Array Of Colors And Names
-
-	TCHAR			m_cColorName[ CCB_MAX_COLOR_NAME ];		// Name Of Selected Color
+	HWND m_hCombo;
 
 	//
 	//	Prevent Misuse Of Copies...
 	//
-	/**/			CColorPickerCB( const CColorPickerCB& rSrc );
+	CColorPickerCB( const CColorPickerCB& rSrc );
 	CColorPickerCB	&operator=( const CColorPickerCB& rSrc );
 };
 
 /////////////////////////////////////////////////////////////////////////////
 
-//{{AFX_INSERT_LOCATION}}
-// Microsoft Developer Studio will insert additional declarations immediately before the previous line.
-
-#endif // !defined(AFX_COLORPICKERCB_H__C74333B7_A13A_11D1_ADB6_C04D0BC10000__INCLUDED_)
+#endif // !defined(COLORPICKERCB_H__C74333B7_A13A_11D1_ADB6_C04D0BC10000__INCLUDED_)

@@ -1,5 +1,4 @@
 #pragma once
-#include <stdafx.h>
 
 #include "bass.h"
 
@@ -15,8 +14,4 @@ public:
 private:
 	HSAMPLE sample;
 	static int currVol;
-	//На базе MMSYSTEM
-	//char *buffer;
-	//bool ok;
-	//HINSTANCE HInstance;
 };

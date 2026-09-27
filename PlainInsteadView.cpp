@@ -1,91 +1,50 @@
-// PlainInsteadView.cpp : реализация класса CPlainInsteadView
+п»ї// PlainInsteadView.cpp : implementation of the game view (pure Win32)
 //
 
 #include "stdafx.h"
-#include "PlainInstead.h"
-
-#include "PlainInsteadDoc.h"
+#include "resource.h"
 #include "PlainInsteadView.h"
-
+#include "PlainInstead.h"
 #include "InterpreterController.h"
 #include "MultiSpeech.h"
 #include "GlobalManager.h"
 #include "IniFile.h"
-#include "global.h"
 #include "StdioFileEx.h"
 #include <regex>
 
-#ifdef _DEBUG
-#define new DEBUG_NEW
-#endif
-
 extern "C" {
-#include "instead\instead.h"
+#include "instead/instead.h"
 }
 
+// message sent by the common Find dialog
+static UINT WM_FINDREPLACE = ::RegisterWindowMessageW(FINDMSGSTRING);
 
 CPlainInsteadView* CPlainInsteadView::m_curView = 0;
-CEdit* updateEdit = NULL;
-void CALLBACK EXPORT OnTimerUpdateText(HWND, UINT, UINT, DWORD);
 
 CPlainInsteadView* CPlainInsteadView::GetCurrentView()
 {
-    return m_curView;
+	return m_curView;
 }
 
-// CPlainInsteadView
-
- static UINT WM_FINDREPLACE = ::RegisterWindowMessage(FINDMSGSTRING);
-
-IMPLEMENT_DYNCREATE(CPlainInsteadView, CFormView)
-
-BEGIN_MESSAGE_MAP(CPlainInsteadView, CFormView)
-	ON_WM_SIZE()
-	ON_EN_SETFOCUS(IDC_EDIT_OUT, &CPlainInsteadView::OnEnSetfocusEditOut)
-	ON_WM_TIMER()		// реагировать на таймер
-	ON_WM_CTLCOLOR()
-	ON_WM_DESTROY()
-	ON_WM_SHOWWINDOW()
-	ON_WM_CLOSE()
-	ON_COMMAND(ID_FULL_HISTORY, &CPlainInsteadView::OnFullHistory)
-	ON_COMMAND(ID_BACK_HIST, &CPlainInsteadView::OnBackHist)
-	ON_COMMAND(ID_FORW_HIST, &CPlainInsteadView::OnForwHist)
-	ON_COMMAND(ID_MANUAL_STARTER, &CPlainInsteadView::OnManualStarter)
-	ON_COMMAND(ID_MANUAL_CMD_LIST, &CPlainInsteadView::OnManualCmdList)
-	ON_COMMAND(ID_MANUAL_HOW_PLAY, &CPlainInsteadView::OnManualHowPlay)
-	ON_COMMAND(ID_MANUAL_RUK1, &CPlainInsteadView::OnManualRuk1)
-	ON_COMMAND(ID_MANUAL_RUK2, &CPlainInsteadView::OnManualRuk2)
-	ON_COMMAND(ID_MANUAL_RUK3, &CPlainInsteadView::OnManualRuk3)
-	ON_COMMAND(ID_MANUAL_RUK4, &CPlainInsteadView::OnManualRuk4)
-	ON_COMMAND(ID_MANUAL_RUK5, &CPlainInsteadView::OnManualRuk5)
-	ON_COMMAND(ID_MANUAL_RUK6, &CPlainInsteadView::OnManualRuk6)
-	ON_COMMAND(ID_MANUAL_RUK7, &CPlainInsteadView::OnManualRuk7)
-	ON_COMMAND(ID_MANUAL_BIG_WRAP, &CPlainInsteadView::OnManualBigWrap)
-	ON_COMMAND(ID_FIND_TEXT, &CPlainInsteadView::OnFindText)
-	ON_REGISTERED_MESSAGE(WM_FINDREPLACE, OnFindReplace)
-	ON_COMMAND(ID_FIND_NEXT, &CPlainInsteadView::OnFindNext)
-	ON_COMMAND(ID_HISTORY_STOP, &CPlainInsteadView::OnHistoryStop)
-	ON_COMMAND(ID_HISTORY_START, &CPlainInsteadView::OnHistoryStart)
-	ON_COMMAND(ID_UPDATE, &CPlainInsteadView::OnUpdateOutView)
-	ON_STN_CLICKED(IDC_STATIC_SCENE, &CPlainInsteadView::OnStnClickedStaticScene)
-	ON_LBN_SETFOCUS(IDC_LIST_SCENE, &CPlainInsteadView::OnLbnSetfocusListScene)
-	ON_LBN_SETFOCUS(IDC_LIST_INV, &CPlainInsteadView::OnLbnSetfocusListInv)
-	ON_LBN_SETFOCUS(IDC_LIST_WAYS, &CPlainInsteadView::OnLbnSetfocusListWays)
-	ON_COMMAND(ID_GOTO_SCENE, &CPlainInsteadView::OnGotoScene)
-	ON_COMMAND(ID_GOTO_INV, &CPlainInsteadView::OnGotoInv)
-	ON_COMMAND(ID_GOTO_WAYS, &CPlainInsteadView::OnGotoWays)
-	ON_COMMAND(ID_MENU_LOG, &CPlainInsteadView::OnMenuLog)
-	ON_COMMAND(ID_MENU_ADD_COMMENT, &CPlainInsteadView::OnMenuAddComment)
-	ON_UPDATE_COMMAND_UI(ID_MENU_ADD_COMMENT, &CPlainInsteadView::OnUpdateMenuAddComment)
-END_MESSAGE_MAP()
-
-// создание/уничтожение CPlainInsteadView
+static std::wstring utf8_to_wide(const char* utf8Str)
+{
+	if (!utf8Str || !*utf8Str) return std::wstring();
+	int size_needed = MultiByteToWideChar(CP_UTF8, 0, utf8Str, -1, NULL, 0);
+	std::wstring wstrTo(size_needed, 0);
+	MultiByteToWideChar(CP_UTF8, 0, utf8Str, -1, &wstrTo[0], size_needed);
+	wstrTo.resize(wcslen(wstrTo.c_str()));
+	return wstrTo;
+}
 
 CPlainInsteadView::CPlainInsteadView()
-	: CFormView(CPlainInsteadView::IDD)
 {
-	EnableActiveAccessibility();
-	// TODO: добавьте код создания
+	m_hWndMain = NULL;
+	m_hWndView = NULL;
+	m_hOutEdit = NULL;
+	m_hListScene = NULL;
+	m_hListInv = NULL;
+	m_hListWays = NULL;
+	m_fontOut = NULL;
 	outFontCol = RGB(0, 0, 0);
 	outBackCol = RGB(240, 240, 240);
 	inFontCol = RGB(0, 0, 0);
@@ -94,183 +53,266 @@ CPlainInsteadView::CPlainInsteadView()
 	useClipboard = false;
 	m_auto_say = true;
 	m_jump_to_out = false;
-	m_pFindDialog = NULL;
+	m_hFindDialog = NULL;
 	wasFind = false;
 	wave_inv = 0;
 	wave_ways = 0;
 	wave_scene = 0;
 	isLogOn = false;
+	isStartComment = false;
 }
 
 CPlainInsteadView::~CPlainInsteadView()
 {
+	if (m_fontOut) DeleteObject(m_fontOut);
 	if (wave_inv) delete wave_inv;
 	if (wave_ways) delete wave_ways;
 	if (wave_scene) delete wave_scene;
 }
 
-void CPlainInsteadView::DoDataExchange(CDataExchange* pDX)
+void CPlainInsteadView::CreateView(HWND hWndMain)
 {
-	CFormView::DoDataExchange(pDX);
-	DDX_Control(pDX, IDC_EDIT_OUT, m_OutEdit);
-	DDX_Control(pDX, IDC_LIST_SCENE, mListScene);
-	DDX_Control(pDX, IDC_LIST_INV, mListInv);
-	DDX_Control(pDX, IDC_LIST_WAYS, mListWays);
-	DDX_Control(pDX, IDC_STATIC_SCENE, mStaticScene);
-	DDX_Control(pDX, IDC_STATIC_INV, mStaticInv);
-	DDX_Control(pDX, IDC_STATIC_WAYS, mStaticWays);
+	static bool registered = false;
+	if (!registered)
+	{
+		WNDCLASSEXW wcex;
+		memset(&wcex, 0, sizeof(wcex));
+		wcex.cbSize = sizeof(WNDCLASSEXW);
+		wcex.style = CS_HREDRAW | CS_VREDRAW;
+		wcex.lpfnWndProc = ViewWndProc;
+		wcex.hInstance = GetModuleHandleW(NULL);
+		wcex.hCursor = LoadCursorW(NULL, IDC_ARROW);
+		wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+		wcex.lpszClassName = L"PlainInsteadViewClass";
+		RegisterClassExW(&wcex);
+		registered = true;
+	}
+
+	if (!m_curView)
+		m_curView = new CPlainInsteadView();
+
+	m_curView->m_hWndMain = hWndMain;
+	m_curView->m_hWndView = CreateWindowExW(0, L"PlainInsteadViewClass", L"",
+		WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+		0, 0, 0, 0, hWndMain, NULL, GetModuleHandleW(NULL), NULL);
 }
 
-BOOL CPlainInsteadView::PreCreateWindow(CREATESTRUCT& cs)
+LRESULT CALLBACK CPlainInsteadView::ViewWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	// TODO: изменить класс Window или стили посредством изменения
-	//  CREATESTRUCT cs
+	if (!m_curView)
+		return DefWindowProcW(hWnd, message, wParam, lParam);
 
-	return CFormView::PreCreateWindow(cs);
+	switch (message)
+	{
+	case WM_CREATE:
+	{
+		HINSTANCE hInst = GetModuleHandleW(NULL);
+		// multiline output edit
+		m_curView->m_hOutEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_LEFT | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+			0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_EDIT_OUT, hInst, NULL);
+		// three lists: scene, inventory, ways
+		m_curView->m_hListScene = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
+			0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_LIST_SCENE, hInst, NULL);
+		m_curView->m_hListInv = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
+			0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_LIST_INV, hInst, NULL);
+		m_curView->m_hListWays = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
+			0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_LIST_WAYS, hInst, NULL);
+		m_curView->OnInitialUpdate();
+		return 0;
+	}
+	case WM_SIZE:
+		m_curView->OnSize(LOWORD(lParam), HIWORD(lParam));
+		return 0;
+	case WM_CTLCOLORSTATIC:
+	case WM_CTLCOLOREDIT:
+		m_curView->OnCtlColor((HWND)lParam, (HDC)wParam, message == WM_CTLCOLOREDIT ? CTLCOLOR_EDIT : CTLCOLOR_STATIC);
+		return (LRESULT)GetStockObject(WHITE_BRUSH);
+	case WM_COMMAND:
+		if (m_curView->HandleCommand(hWnd, wParam, lParam))
+			return 0;
+		break;
+	}
+	// WM_FINDREPLACE is a RegisterWindowMessage value, not a constant: handle it outside the switch
+	if (message == WM_FINDREPLACE)
+	{
+		// common find dialog notification
+		LPFINDREPLACEW pfr = (LPFINDREPLACEW)lParam;
+		if (pfr->Flags & FR_DIALOGTERM)
+		{
+			m_curView->m_hFindDialog = NULL;
+			return 0;
+		}
+		if (pfr->Flags & FR_FINDNEXT)
+		{
+			std::wstring FindName = pfr->lpstrFindWhat ? pfr->lpstrFindWhat : L"";
+			bool bMatchCase = (pfr->Flags & FR_MATCHCASE) != 0;
+			if (m_curView->FindStringInEdit(FindName, bMatchCase))
+			{
+				m_curView->wasFind = true;
+				m_curView->lastSearchStr = FindName;
+				m_curView->lastMatchCase = bMatchCase;
+				// close the dialog after a successful search
+				if (m_curView->m_hFindDialog) { DestroyWindow(m_curView->m_hFindDialog); m_curView->m_hFindDialog = NULL; }
+			}
+			else
+			{
+				MessageBeep(MB_ICONSTOP);
+			}
+		}
+		return 0;
+	}
+	return DefWindowProcW(hWnd, message, wParam, lParam);
+}
+
+void CPlainInsteadView::OnCtlColor(HWND hWndChild, HDC hDC, UINT nCtlColor)
+{
+	if (hWndChild == m_hOutEdit)
+	{
+		SetTextColor(hDC, outFontCol);
+		SetBkColor(hDC, outBackCol);
+	}
 }
 
 void CPlainInsteadView::OnInitialUpdate()
 {
-	CFormView::OnInitialUpdate();
-	GetParentFrame()->RecalcLayout();
-	ResizeParentToFit();
-
-	m_curView = this;
-
-    m_OutEdit.SetWindowTextW(
-    L"Краткая справка:\r\n"
-    L"Для начала новой игры из библиотеки нажмите CTRL+M и выберите игру и нажмите ENTER.\r\n"
-	L"Если вы скачали игру, которой нет в библиотеке, то нажмите CTRL+N и выберите архив с игрой.\r\n"
-    L"Для того чтобы играть выберите пункт в одном из списков - объекты, инвентарь, пути и нажмите клавишу ENTER.\r\n"
-    L"Когда вы находитесь в инвентаре, вам необходимо сначала выбрать пункт, нажать ENTER, а затем выбрать второй пункт и нажать ENTER.\r\n"
-    L"Сохранение и загрузка игр происходит обязательно в каталогах с играми, менять на другой нельзя.\r\n"
-    L"При сохранении, указывайте пожалуйста имя файла латинскими буквами или цифрами.\r\n"
-	L"Внимание! Большие архивы могут не распаковываться программой через менеджер или установку в библиотеку. Попробуйте самостоятельно распаковать их в папку с играми."
+	SetWindowTextW(m_hOutEdit,
+		L"РЈРїСЂР°РІР»РµРЅРёРµ РёРіСЂРѕР№:\r\n"
+		L"Р”Р»СЏ РІРІРѕРґР° РєРѕРјР°РЅРґ РЅР°Р¶РјРёС‚Рµ CTRL+M Рё РІС‹Р±РµСЂРёС‚Рµ РёРіСЂСѓ Рё РЅР°Р¶РјРёС‚Рµ ENTER.\r\n"
+		L"Р•СЃР»Рё РІС‹ Р·Р°РіСЂСѓР·РёР»Рё РёРіСЂСѓ, РґРѕСЃС‚СѓРїРЅСѓСЋ РІ Р±РёР±Р»РёРѕС‚РµРєРµ, С‚Рѕ РЅР°Р¶РјРёС‚Рµ CTRL+N Рё Р·Р°РіСЂСѓР·РёС‚Рµ РёРіСЂСѓ РёР· РЅРµС‘.\r\n"
+		L"РџСЂРё РїРµСЂРµС…РѕРґРµ РјРµР¶РґСѓ РєРѕРјРЅР°С‚Р°РјРё РґРѕСЃС‚СѓРїРµРЅ СЃРїРёСЃРѕРє РґРµР№СЃС‚РІРёР№ (РїРµСЂРµС…РѕРґС‹, РїСЂРµРґРјРµС‚С‹ Рё С‚.Рґ.), РІС‹Р±РµСЂРёС‚Рµ РЅСѓР¶РЅС‹Р№ Рё РЅР°Р¶РјРёС‚Рµ ENTER.\r\n"
+		L"Р§С‚РѕР±С‹ РїСЂРёРјРµРЅРёС‚СЊ РїСЂРµРґРјРµС‚ Рє РѕР±СЉРµРєС‚Сѓ, РІС‹Р±РµСЂРёС‚Рµ СЃРЅР°С‡Р°Р»Р° РїСЂРµРґРјРµС‚, РЅР°Р¶РјРёС‚Рµ ENTER, Р° Р·Р°С‚РµРј РІС‹Р±РµСЂРёС‚Рµ РѕР±СЉРµРєС‚ Рё СЃРЅРѕРІР° РЅР°Р¶РјРёС‚Рµ ENTER.\r\n"
+		L"Р’РѕР·РІСЂР°С‰Р°С‚СЊСЃСЏ Рё РґРІРёРіР°С‚СЊСЃСЏ РїРѕ СѓР¶Рµ РІС‹РїРѕР»РЅРµРЅРЅС‹Рј РґРµР№СЃС‚РІРёСЏРј Рё РѕС‚РІРµС‚Р°Рј РІ РёСЃС‚РѕСЂРёРё, РјРѕР¶РЅРѕ РЅР°Р¶РёРјР°СЏ РЅР° СЃРѕРѕС‚РІ. РєРЅРѕРїРєРё.\r\n"
+		L"Р”Р»СЏ РїРѕРІС‚РѕСЂРµРЅРёСЏ, РїРѕСЃР»РµРґРЅРµРіРѕ СЃРѕРѕР±С‰РµРЅРёСЏ РЅР°Р¶РјРёС‚Рµ СЃРѕРѕС‚РІ. РїСѓРЅРєС‚ РІ РјРµРЅСЋ РёР»Рё РєРЅРѕРїРєСѓ.\r\n"
+		L"Р’РЅРёРјР°РЅРёРµ! Р РµР·СѓР»СЊС‚Р°С‚ РёРіСЂС‹ РјРѕР¶РµС‚ РЅРµ РІРѕСЃРїСЂРѕРёР·РІРѕРґРёС‚СЊСЃСЏ РєРѕСЂСЂРµРєС‚РЅРѕ РїСЂРё РїСЂСЏРјРѕРј Р·Р°РїСѓСЃРєРµ exe С„Р°Р№Р»Р° РёР· Р°СЂС…РёРІР°. Р РµРєРѕРјРµРЅРґСѓРµС‚СЃСЏ СЂР°СЃРїР°РєРѕРІС‹РІР°С‚СЊ РїСЂРёР»РѕР¶РµРЅРёРµ РІ РѕС‚РґРµР»СЊРЅСѓСЋ РїР°РїРєСѓ СЃ РёРіСЂР°РјРё."
 	);
 
-	//Инициализация голосового ввода
+	// initialize the speech
 	MultiSpeech::getInstance();
 
-	//Обновление настроек
+	// read the settings
 	UpdateSettings();
-	//Запуск таймера обновления текста
-	//SetTimer(ID_TIMER_2,100,OnTimerUpdateText);
-	//чтение настроек
+
 	CIniFile mainSettings;
-	useClipboard = mainSettings.GetInt(L"main", L"useClipboard", 0 );
-
-	updateEdit = &m_OutEdit;
+	useClipboard = mainSettings.GetInt(L"main", L"useClipboard", 0) != 0;
 }
 
-
-// диагностика CPlainInsteadView
-
-#ifdef _DEBUG
-void CPlainInsteadView::AssertValid() const
+void CPlainInsteadView::OnSize(int cx, int cy)
 {
-	CFormView::AssertValid();
-}
-
-void CPlainInsteadView::Dump(CDumpContext& dc) const
-{
-	CFormView::Dump(dc);
-}
-
-CPlainInsteadDoc* CPlainInsteadView::GetDocument() const // встроена неотлаженная версия
-{
-	ASSERT(m_pDocument->IsKindOf(RUNTIME_CLASS(CPlainInsteadDoc)));
-	return (CPlainInsteadDoc*)m_pDocument;
-}
-#endif //_DEBUG
-
-
-// обработчики сообщений CPlainInsteadView
-
-void CPlainInsteadView::OnSize(UINT nType, int cx, int cy)
-{
-	CFormView::OnSize(nType, cx, cy);
-
-	// TODO: добавьте свой код обработчика сообщений
-	// Автомасштабирование компонентов	
-
 	int h_static = 30;
-	int dh_static_text = 15;
-	int h_static_text = h_static - dh_static_text;
 	int sz_list = 200;
 	int h_list = (cy / 3 - h_static);
-	if (m_OutEdit.m_hWnd) m_OutEdit.SetWindowPos(NULL, 0, 0, cx - sz_list, cy, SWP_NOACTIVATE | SWP_NOZORDER);
-	
-	//if (mStaticScene.m_hWnd) mStaticScene.SetWindowPos(NULL, 2+cx - sz_list, dh_static_text, sz_list, h_static_text, SWP_NOACTIVATE | SWP_NOZORDER);
-	if (mListScene.m_hWnd) mListScene.SetWindowPos(NULL, 2 + cx - sz_list,h_static, sz_list, h_list, SWP_NOACTIVATE | SWP_NOZORDER);
-	
-	//if (mStaticInv.m_hWnd) mStaticInv.SetWindowPos(NULL, 2 + cx - sz_list, h_static +h_list + dh_static_text, sz_list, h_static_text, SWP_NOACTIVATE | SWP_NOZORDER);
-	if (mListInv.m_hWnd)   mListInv.SetWindowPos(NULL, 2 + cx - sz_list, h_static + h_list+h_static, sz_list, h_list, SWP_NOACTIVATE | SWP_NOZORDER);
-	
-	//if (mStaticWays.m_hWnd) mStaticWays.SetWindowPos(NULL, 2 + cx - sz_list, h_static + h_list+ h_static + h_list+ dh_static_text, sz_list, h_static_text, SWP_NOACTIVATE | SWP_NOZORDER);
-	if (mListWays.m_hWnd)  mListWays.SetWindowPos(NULL, 2 + cx - sz_list,h_static + h_list + h_static + h_list+ h_static, sz_list, h_list, SWP_NOACTIVATE | SWP_NOZORDER);
+	// the view container must fill the whole main window client area,
+	// otherwise its children are clipped to a zero-size parent
+	if (m_hWndView) SetWindowPos(m_hWndView, NULL, 0, 0, cx, cy, SWP_NOACTIVATE | SWP_NOZORDER);
+	if (m_hOutEdit) SetWindowPos(m_hOutEdit, NULL, 0, 0, cx - sz_list, cy, SWP_NOACTIVATE | SWP_NOZORDER);
+	if (m_hListScene) SetWindowPos(m_hListScene, NULL, 2 + cx - sz_list, h_static, sz_list, h_list, SWP_NOACTIVATE | SWP_NOZORDER);
+	if (m_hListInv)   SetWindowPos(m_hListInv, NULL, 2 + cx - sz_list, h_static + h_list + h_static, sz_list, h_list, SWP_NOACTIVATE | SWP_NOZORDER);
+	if (m_hListWays)  SetWindowPos(m_hListWays, NULL, 2 + cx - sz_list, h_static + h_list + h_static + h_list + h_static, sz_list, h_list, SWP_NOACTIVATE | SWP_NOZORDER);
 }
 
-static bool Utf8ToCString(CString& cstr, const char* utf8Str)
+void CPlainInsteadView::OnMainSetFocus()
 {
-	size_t utf8StrLen = strlen(utf8Str);
+	// give focus to the view
+	SetFocus(m_hWndView);
+}
 
-	if (utf8StrLen == 0)
+bool CPlainInsteadView::HandleCommand(HWND hWnd, WPARAM wParam, LPARAM lParam)
+{
+	int wmEvent = HIWORD(wParam);
+	int id = LOWORD(wParam);
+
+	// control notifications come from the view children
+	if (lParam && (m_hOutEdit == (HWND)lParam || m_hListScene == (HWND)lParam ||
+		m_hListInv == (HWND)lParam || m_hListWays == (HWND)lParam))
 	{
-		cstr.Empty();
-		return true;
-	}
-
-	LPWSTR ptr = cstr.GetBuffer(utf8StrLen + 1);
-
-	// CString is UNICODE string so we decode
-	int newLen = MultiByteToWideChar(
-		CP_UTF8, 0,
-		utf8Str, utf8StrLen, ptr, utf8StrLen + 1
-		);
-	if (!newLen)
-	{
-		cstr.ReleaseBuffer(0);
+		switch (wmEvent)
+		{
+		case LBN_SETFOCUS:
+			if ((HWND)lParam == m_hListScene) OnLbnSetfocus(m_hListScene, L"РЎС†РµРЅР°");
+			else if ((HWND)lParam == m_hListInv) OnLbnSetfocus(m_hListInv, L"РРЅРІРµРЅС‚Р°СЂСЊ");
+			else if ((HWND)lParam == m_hListWays) OnLbnSetfocus(m_hListWays, L"РџСѓС‚Рё");
+			return true;
+		case LBN_DBLCLK:
+			// double click acts as ENTER
+			if ((HWND)lParam == m_hListScene || (HWND)lParam == m_hListInv || (HWND)lParam == m_hListWays)
+			{
+				// fall through to the keydown logic below
+			}
+			return true;
+		case EN_SETFOCUS:
+			if ((HWND)lParam == m_hOutEdit)
+			{
+				// collapse a full selection made by tabbing into the edit
+				DWORD sel = (DWORD)SendMessageW(m_hOutEdit, EM_GETSEL, 0, 0);
+				int selFrom = LOWORD(sel);
+				int selTo = HIWORD(sel);
+				int len = (int)GetWindowTextLengthW(m_hOutEdit);
+				if (selFrom == 0 && (len == (selTo - selFrom)))
+				{
+					SendMessageW(m_hOutEdit, EM_SETSEL, 0, 0);
+				}
+			}
+			return true;
+		}
 		return false;
 	}
 
-	cstr.ReleaseBuffer(newLen);
-	return true;
+	// menu commands handled by the view
+	switch (id)
+	{
+	case ID_FULL_HISTORY: OnFullHistory(); return true;
+	case ID_BACK_HIST: OnBackHist(); return true;
+	case ID_FORW_HIST: OnForwHist(); return true;
+	case ID_MANUAL_STARTER: OnManualStarter(); return true;
+	case ID_MANUAL_CMD_LIST: OnManualCmdList(); return true;
+	case ID_MANUAL_HOW_PLAY: OnManualHowPlay(); return true;
+	case ID_MANUAL_RUK1: OnManualRuk(1); return true;
+	case ID_MANUAL_RUK2: OnManualRuk(2); return true;
+	case ID_MANUAL_RUK3: OnManualRuk(3); return true;
+	case ID_MANUAL_RUK4: OnManualRuk(4); return true;
+	case ID_MANUAL_RUK5: OnManualRuk(5); return true;
+	case ID_MANUAL_RUK6: OnManualRuk(6); return true;
+	case ID_MANUAL_RUK7: OnManualRuk(7); return true;
+	case ID_MANUAL_BIG_WRAP: OnManualBigWrap(); return true;
+	case ID_FIND_TEXT: OnFindText(); return true;
+	case ID_FIND_NEXT: OnFindNext(); return true;
+	case ID_HISTORY_STOP: OnHistoryStop(); return true;
+	case ID_HISTORY_START: OnHistoryStart(); return true;
+	case ID_UPDATE: OnUpdateOutView(); return true;
+	case ID_GOTO_SCENE: OnGoto(m_hListScene); return true;
+	case ID_GOTO_INV: OnGoto(m_hListInv); return true;
+	case ID_GOTO_WAYS: OnGoto(m_hListWays); return true;
+	case ID_MENU_LOG: OnMenuLog(); return true;
+	case ID_MENU_ADD_COMMENT: OnMenuAddComment(); return true;
+	}
+	return false;
 }
 
-static std::string utf8_encode(const std::wstring &wstr)
-{
-	if (wstr.empty()) return std::string();
-	int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
-	std::string strTo(size_needed, 0);
-	WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
-	return strTo;
-}
-
-//Ядро движка-оболочки
-//Обработка инстеад-текста и превращение в меню
-static std::wstring process_instead_text(std::wstring inp, //входной текст
-	CListBox& resBox, //Поле для добавления элементов
-	std::map<int/*list_pos*/, int/*id_obj*/>& map_action, //Карта соответсвий поля со id-объекта
-	bool append_num=false //добавлять номер в список (для отладки)
+// process the instead markup: fill a listbox with [a]refs[/a] and strip them from the text
+static std::wstring process_instead_text(std::wstring inp, //input text
+	HWND resBox, //list to add actions to
+	std::map<int/*list_pos*/, int/*id_obj*/>& map_action, // map of list positions to object ids
+	bool append_num = false //append the number to the item (for inventory)
 	)
 {
-	//Обработка отображения объектов сцены
-	//const std::wregex regex(L"\\{\\s*(\\w+)\\s*\\#(\\d+)\\}"); //Для фигурных скобочек
-	//const std::wregex regex(L"(\\w+)\\s*\\((\\d+)\\)"); //Для круглых после
-	const std::wregex regex(L"\\[a\\]([^\\#]*)\\#(\\d+)\\[\\/a\\]");//для тэгов [a]
+	const std::wregex regex(L"\\[a\\]([^\\#]*)\\#(\\d+)\\[\\/a\\]");//format [a]
 	std::wsregex_iterator next(inp.begin(), inp.end(), regex);
 	std::wsregex_iterator end;
 	while (next != end) {
 		std::wsmatch match = *next;
 		if (match.size() == 3)
 		{
-			CString addStr(match[1].str().data()); //Имя строки, меню
-			addStr = addStr.Trim(); //триммируем
-			CString numStr(match[2].str().data()); //id-обхекта для реакции
-			int obj_id = _wtoi(numStr); //id-объекта
+			std::wstring addStr = match[1].str(); //item name
+			addStr = addStr.erase(addStr.find_last_not_of(L" \t") + 1); //trim
+			std::wstring numStr = match[2].str(); //object id
+			int obj_id = _wtoi(numStr.c_str()); //object id
 			if (append_num) addStr = addStr + L"(" + numStr + L")";
-			int str_pos = resBox.GetCount(); //добавление строки в список
-			resBox.InsertString(str_pos, addStr);
+			int str_pos = (int)SendMessageW(resBox, LB_GETCOUNT, 0, 0);
+			SendMessageW(resBox, LB_INSERTSTRING, str_pos, (LPARAM)addStr.c_str());
 			map_action.insert(std::make_pair(str_pos, obj_id));
 		}
 		next++;
@@ -280,26 +322,24 @@ static std::wstring process_instead_text(std::wstring inp, //входной текст
 	return result;
 }
 
-static std::wstring process_instead_text_act(std::wstring inp, //входной текст
-	CListBox& resBox, //Поле для добавления элементов
-	std::map<int/*list_pos*/, CString/*code*/>& map_action //Карта соответсвий поля со действием lua
+// process the instead markup with inline lua: [a: code]text[/a]
+static std::wstring process_instead_text_act(std::wstring inp,
+	HWND resBox,
+	std::map<int/*list_pos*/, std::wstring/*code*/>& map_action
 	)
 {
-	//Обработка отображения объектов сцены
-	//const std::wregex regex(L"\\{\\s*(\\w+)\\s*\\#(\\d+)\\}"); //Для фигурных скобочек
-	//const std::wregex regex(L"(\\w+)\\s*\\((\\d+)\\)"); //Для круглых после
-	const std::wregex regex(L"\\[a\\:([^\\]]*)\\]([^\\[]*)\\[\\/a\\]");//для тэгов [a: code]text[\a]
+	const std::wregex regex(L"\\[a\\:([^\\]]*)\\]([^\\[]*)\\[\\/a\\]");//format [a: code]text[/a]
 	std::wsregex_iterator next(inp.begin(), inp.end(), regex);
 	std::wsregex_iterator end;
 	while (next != end) {
 		std::wsmatch match = *next;
 		if (match.size() == 3)
 		{
-			CString codeStr(match[1].str().data()); //Имя строки, меню
-			codeStr = codeStr.Trim(); //триммируем
-			CString textStr(match[2].str().data()); //id-обхекта для реакции
-			int str_pos = resBox.GetCount(); //добавление строки в список
-			resBox.InsertString(str_pos, textStr);
+			std::wstring codeStr = match[1].str(); //lua code
+			codeStr = codeStr.erase(codeStr.find_last_not_of(L" \t") + 1); //trim
+			std::wstring textStr = match[2].str(); //item name
+			int str_pos = (int)SendMessageW(resBox, LB_GETCOUNT, 0, 0);
+			SendMessageW(resBox, LB_INSERTSTRING, str_pos, (LPARAM)textStr.c_str());
 			map_action.insert(std::make_pair(str_pos, codeStr));
 		}
 		next++;
@@ -309,171 +349,175 @@ static std::wstring process_instead_text_act(std::wstring inp, //входной текст
 	return result;
 }
 
-void CPlainInsteadView::TryInsteadCommand(CString textIn, CString cmdForLog)
+void CPlainInsteadView::TryInsteadCommand(const std::wstring& textIn, const std::wstring& cmdForLog)
 {
-	CString resout;
-	CString tmp;
+	std::wstring resout;
+	std::wstring tmp;
 	char *p;
 	std::map<int, int> prev_map;
-	CString userComments;
+	std::wstring userComments;
 
-	//Если был комментарий, то запоминаем и убираем флаг
+	// if a comment is being typed, save it into the log
 	if (isLogOn && isStartComment) {
-		m_OutEdit.GetWindowTextW(userComments);
-		userComments = L"\n*" + userComments;
+		int len = GetWindowTextLengthW(m_hOutEdit);
+		std::vector<wchar_t> buf(len + 1);
+		GetWindowTextW(m_hOutEdit, &buf[0], len + 1);
+		userComments = L"\n*" + std::wstring(&buf[0]);
 		isStartComment = false;
-		m_OutEdit.SetReadOnly(TRUE);
+		SendMessageW(m_hOutEdit, EM_SETREADONLY, TRUE, 0);
 	}
 
-	mListScene.ResetContent();
+	SendMessageW(m_hListScene, LB_RESETCONTENT, 0, 0);
 	prev_map = pos_id_scene;
 	pos_id_scene.clear();
 	act_on_scene.clear();
-	if (!textIn.IsEmpty())
+	if (!textIn.empty())
 	{
 		bool is_saving = false;
-		if (textIn.Find(L"save ") >= 0)
+		if (textIn.find(L"save ") != std::wstring::npos)
 		{
 			GlobalManager::getInstance().userSavedFile();
 			is_saving = true;
 		}
-		char command[256];
-		strcpy(command, utf8_encode(textIn.GetBuffer()).c_str());
-		//Обработка строки в Instead
+		std::string command = utf8_encode(textIn);
+		// send the command to Instead
 		char *str;
 		int rc;
-		char cmd[64];
-		snprintf(cmd, sizeof(cmd), "use %s", command);
+		char cmd[256];
+		snprintf(cmd, sizeof(cmd), "use %s", command.c_str());
 		str = instead_cmd(cmd, &rc);
 		if (rc) { /* try go */
 			free(str);
-			snprintf(cmd, sizeof(cmd), "go %s", command);
+			snprintf(cmd, sizeof(cmd), "go %s", command.c_str());
 			str = instead_cmd(cmd, &rc);
 		}
 		if (rc) { /* try act */
 			free(str);
-			snprintf(cmd, sizeof(cmd), "%s", command);
+			snprintf(cmd, sizeof(cmd), "%s", command.c_str());
 			str = instead_cmd(cmd, &rc);
 		}
 		if (str) {
-			Utf8ToCString(tmp, str);
-			//resout.Append(tmp);
-			std::wstring buf = tmp.GetBuffer();
-			std::wstring result = process_instead_text(buf, mListScene, pos_id_scene);
-			std::wstring result2 = process_instead_text_act(result, mListScene, act_on_scene);
-			resout.Append(result2.data());
-			resout.Append(L"\n");
+			tmp = utf8_to_wide(str);
+			std::wstring result = process_instead_text(tmp, m_hListScene, pos_id_scene);
+			std::wstring result2 = process_instead_text_act(result, m_hListScene, act_on_scene);
+			resout.append(result2);
+			resout.append(L"\n");
 			if (!is_saving) GlobalManager::getInstance().userNewCommand();
 		}
 	}
 	else
 	{
-		//Обновление окна
+		// update the scene
 		p = instead_cmd("", NULL);
 		if (p && *p) {
-			Utf8ToCString(tmp, p);
-			std::wstring buf = tmp.GetBuffer();
-			std::wstring result = process_instead_text(buf, mListScene, pos_id_scene);
-			std::wstring result2 = process_instead_text_act(result, mListScene, act_on_scene);
-			resout.Append(result2.data());
-			//resout.Append(tmp);
-			resout.Append(L"\n");
+			tmp = utf8_to_wide(p);
+			std::wstring result = process_instead_text(tmp, m_hListScene, pos_id_scene);
+			std::wstring result2 = process_instead_text_act(result, m_hListScene, act_on_scene);
+			resout.append(result2);
+			resout.append(L"\n");
 		}
 	}
-	if (/*m_BeepList && */prev_map.size() != pos_id_scene.size()) {
+	if (prev_map.size() != pos_id_scene.size()) {
 		wave_scene->play();
 	}
 
-	mListWays.ResetContent();
+	SendMessageW(m_hListWays, LB_RESETCONTENT, 0, 0);
 	prev_map = pos_id_ways;
 	pos_id_ways.clear();
 	p = instead_cmd("way", NULL);
 	if (p && *p) {
-		Utf8ToCString(tmp, instead_cmd("way", NULL));
-		//Добавление путей к окну вывода
-		//resout.Append(L">> ");
-		//resout.Append(tmp);
-		//resout.Append(L"\n");
-		std::wstring buf = tmp.GetBuffer();
-		std::wstring result = process_instead_text(buf, mListWays, pos_id_ways);
+		tmp = utf8_to_wide(p);
+		std::wstring result = process_instead_text(tmp, m_hListWays, pos_id_ways);
 	}
-	if (/*m_BeepList && */prev_map.size() != pos_id_ways.size()) {
+	if (prev_map.size() != pos_id_ways.size()) {
 		wave_ways->play();
 	}
 
 	p = instead_cmd("inv", NULL);
-	mListInv.ResetContent();
+	SendMessageW(m_hListInv, LB_RESETCONTENT, 0, 0);
 	prev_map = pos_id_inv;
 	pos_id_inv.clear();
 	if (p && *p) {
-		Utf8ToCString(tmp, instead_cmd("inv", NULL));
-		//Добавление инвентаря к окну вывода
-		//resout.Append(L"** ");
-		//resout.Append(tmp);
-		//resout.Append(L"\n");
-		std::wstring buf = tmp.GetBuffer();
-		std::wstring result = process_instead_text(buf, mListInv, pos_id_inv);
+		tmp = utf8_to_wide(p);
+		std::wstring result = process_instead_text(tmp, m_hListInv, pos_id_inv, true);
 	}
-	if (/*m_BeepList && */prev_map.size() != pos_id_inv.size()) {
-		//PlaySound(baseSoundDir+_T("inventory.wav"), NULL, SND_MEMORY | SND_FILENAME | SND_ASYNC | SND_NOSTOP);
+	if (prev_map.size() != pos_id_inv.size()) {
 		wave_inv->play();
 	}
 
-	resout.Replace(L"\n", L"\r\n");
-	m_OutEdit.SetWindowTextW(resout);
+	// replace \n with \r\n for the edit control
+	std::wstring text;
+	text.reserve(resout.size() + 16);
+	for (size_t i = 0; i < resout.size(); i++)
+	{
+		if (resout[i] == L'\n' && (i == 0 || resout[i - 1] != L'\r'))
+			text += L'\r';
+		text += resout[i];
+	}
+	SetWindowTextW(m_hOutEdit, text.c_str());
 	if (!m_jump_to_out) UpdateFocusLogic();
 	if (m_auto_say) MultiSpeech::getInstance().Say(resout);
-	if (m_jump_to_out) m_OutEdit.SetFocus();
+	if (m_jump_to_out) SetFocus(m_hOutEdit);
 	if (isLogOn)
 	{
 		CStdioFileEx flog;
-		if (!flog.Open(logFileName, CFile::modeCreate | CFile::modeWrite | CFile::modeNoTruncate))
+		if (!flog.Open(logFileName.c_str(), CFile::modeCreate | CFile::modeWrite | CFile::modeNoTruncate))
 		{
-			AfxMessageBox(L"Не могу записать файл лога! Логирование отключаю.");
+			MessageBoxW(m_hWndMain, L"РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ С„Р°Р№Р» Р»РѕРіР°! РћС‚РєР»СЋС‡Р°РµРј Р»РѕРіРёСЂРѕРІР°РЅРёРµ.", L"РћС€РёР±РєР°", MB_OK | MB_ICONERROR);
 			TurnOffLogging();
 		}
 		flog.SetCodePage(CP_UTF8);
 		flog.SeekToEnd();
-		//Добавка комментариев, если были
-		if (!userComments.IsEmpty())
+		// append the user comment, if any
+		if (!userComments.empty())
 		{
-			flog.WriteString(userComments);
+			flog.WriteString(userComments.c_str());
 			flog.SeekToEnd();
 		}
-		flog.WriteString(L"\n\n>"+ cmdForLog +L"\n");
+		std::wstring logLine = L"\n\n>" + cmdForLog + L"\n";
+		flog.WriteString(logLine.c_str());
 		flog.SeekToEnd();
-		flog.WriteString(resout);
+		flog.WriteString(resout.c_str());
 		flog.SeekToEnd();
-		if (mListScene.GetCount() > 0)
+		int cnt = (int)SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0);
+		if (cnt > 0)
 		{
-			flog.WriteString(L"\nСцена: ");
+			flog.WriteString(L"\nРЎС†РµРЅР°: ");
 			flog.SeekToEnd();
-			CString itm;
-			for (int i = 0; i < mListScene.GetCount(); i++) {
-				mListScene.GetText(i, itm);
-				flog.WriteString(itm + L"; ");
+			for (int i = 0; i < cnt; i++) {
+				int n = (int)SendMessageW(m_hListScene, LB_GETTEXTLEN, i, 0);
+				std::vector<wchar_t> itm(n + 1);
+				SendMessageW(m_hListScene, LB_GETTEXT, i, (LPARAM)&itm[0]);
+				std::wstring s = std::wstring(&itm[0]) + L"; ";
+				flog.WriteString(s.c_str());
 				flog.SeekToEnd();
 			}
 		}
-		if (mListInv.GetCount() > 0)
+		cnt = (int)SendMessageW(m_hListInv, LB_GETCOUNT, 0, 0);
+		if (cnt > 0)
 		{
-			flog.WriteString(L"\nИнвентарь: ");
+			flog.WriteString(L"\nРРЅРІРµРЅС‚Р°СЂСЊ: ");
 			flog.SeekToEnd();
-			CString itm;
-			for (int i = 0; i < mListInv.GetCount(); i++) {
-				mListInv.GetText(i, itm);
-				flog.WriteString(itm + L"; ");
+			for (int i = 0; i < cnt; i++) {
+				int n = (int)SendMessageW(m_hListInv, LB_GETTEXTLEN, i, 0);
+				std::vector<wchar_t> itm(n + 1);
+				SendMessageW(m_hListInv, LB_GETTEXT, i, (LPARAM)&itm[0]);
+				std::wstring s = std::wstring(&itm[0]) + L"; ";
+				flog.WriteString(s.c_str());
 				flog.SeekToEnd();
 			}
 		}
-		if (mListWays.GetCount() > 0)
+		cnt = (int)SendMessageW(m_hListWays, LB_GETCOUNT, 0, 0);
+		if (cnt > 0)
 		{
-			flog.WriteString(L"\nПути: ");
+			flog.WriteString(L"\nРџСѓС‚Рё: ");
 			flog.SeekToEnd();
-			CString itm;
-			for (int i = 0; i < mListWays.GetCount(); i++) {
-				mListWays.GetText(i, itm);
-				flog.WriteString(itm + L"; ");
+			for (int i = 0; i < cnt; i++) {
+				int n = (int)SendMessageW(m_hListWays, LB_GETTEXTLEN, i, 0);
+				std::vector<wchar_t> itm(n + 1);
+				SendMessageW(m_hListWays, LB_GETTEXT, i, (LPARAM)&itm[0]);
+				std::wstring s = std::wstring(&itm[0]) + L"; ";
+				flog.WriteString(s.c_str());
 				flog.SeekToEnd();
 			}
 		}
@@ -481,416 +525,129 @@ void CPlainInsteadView::TryInsteadCommand(CString textIn, CString cmdForLog)
 	}
 }
 
-////////////////////////
-
-BOOL CPlainInsteadView::PreTranslateMessage(MSG* pMsg)
+void CPlainInsteadView::SetOutputText(const std::wstring& newText, BOOL useHistory)
 {
-	static bool was_enter = false;
-    // TODO: добавьте специализированный код или вызов базового класса
-	if ((pMsg->message == WM_CHAR) && ( GetFocus() == &m_OutEdit ) )
-	{
-		//Автоматически перескакиваем на поле ввода если начинаем набирать текст
-		//m_InputEdit.SetFocus();
-		//CString str = _T("");
-		//m_InputEdit.GetWindowText( str );
-		//str.AppendChar(pMsg->wParam);
-		//m_InputEdit.SetWindowText(str);
-		//int len = str.GetLength();
-		//m_InputEdit.SetSel(len,len);
-	}
-	else if (pMsg->message == WM_KEYDOWN &&
-		pMsg->wParam == VK_RETURN &&
-		GetFocus() == &mListScene)
-	{
-		int sel_pos = mListScene.GetCurSel();
-		if (pos_id_scene.count(sel_pos)) {
-			if (pos_id_scene[sel_pos] == 0) {
-				//Это статус, по нему нельзя жмакать, просто сообщаем гудком
-				MessageBeep(MB_OK);
-			}
-			else {
-				CString res;
-				int res_pos = pos_id_scene[sel_pos];
-				if (res_pos > 1000) res_pos -= 1000;
-				res.Format(L"%d", res_pos);
-				if (!inv_save.IsEmpty()) { res = inv_save + +L"," + res;  inv_save.Empty(); }
-				int total_list_sz = mListScene.GetCount();
-				CString selText;
-				mListScene.GetText(sel_pos, selText);
-				TryInsteadCommand(res,L"выбор сцена \'"+ selText + L"\'");
-				if (mListScene.GetCount() == total_list_sz) {
-					mListScene.SetCurSel(sel_pos);
-				}
-				if (mListScene.GetCurSel() == LB_ERR && mListScene.GetCount() > 0)
-				{
-					mListScene.SetCurSel(0);
-				}
-			}
-		}
-		else if (act_on_scene.count(sel_pos)) { //Обработка прямого кода на сцене
-			CString code = act_on_scene[sel_pos];
-			int total_list_sz = mListScene.GetCount();
-			if (!inv_save.IsEmpty()) inv_save.Empty();
-			CString selText;
-			mListScene.GetText(sel_pos, selText);
-			TryInsteadCommand(code, L"действие \'"+ savedSelInv + L"\' на \'" + selText +L"\'");
-			if (mListScene.GetCount() == total_list_sz) {
-				mListScene.SetCurSel(sel_pos);
-			}
-			if (mListScene.GetCurSel() == LB_ERR && mListScene.GetCount() > 0)
-			{
-				mListScene.SetCurSel(0);
-			}
-		}
-		
-	}
-	else if (pMsg->message == WM_KEYDOWN && ::GetKeyState(VK_CONTROL) < 0 && (GetFocus() == &m_OutEdit))
-	{
-		CEdit* currEdit = (CEdit*)GetFocus();
-		switch (pMsg->wParam)
-		{
-		case 'C':
-			currEdit->Copy();
-			return TRUE;
-		case 'A':
-			currEdit->SetSel(0, -1);
-			return TRUE;
-		}
-	}
-	else if (pMsg->message == WM_KEYDOWN &&
-		pMsg->wParam == VK_RETURN &&
-		GetFocus() == &mListWays)
-	{
-		int sel_pos = mListWays.GetCurSel();
-		if (pos_id_ways.count(sel_pos)) {
-			if (pos_id_ways[sel_pos] == 0) {
-				//Это статус, по нему нельзя жмакать, просто сообщаем гудком
-				MessageBeep(MB_OK);
-			}
-			else {
-				CString res;
-				int res_pos = pos_id_ways[sel_pos];
-				if (res_pos > 1000) res_pos -= 1000;
-				res.Format(L"%d", res_pos);
-				if (!inv_save.IsEmpty()) { res = inv_save + +L"," + res;  inv_save.Empty(); }
-				inv_save.Empty(); //Нельзя применить предмет на пути
-				int total_list_sz = mListWays.GetCount();
-				CString selText;
-				mListWays.GetText(sel_pos, selText);
-				TryInsteadCommand(res, L"выбрать путь \'" + selText + L"\'");
-				if (mListWays.GetCount() == total_list_sz) {
-					mListWays.SetCurSel(sel_pos);
-				}
-				if (mListWays.GetCurSel() == LB_ERR && mListWays.GetCount() > 0)
-				{
-					mListWays.SetCurSel(0);
-				}
-			}
-		}
-	}
-	else if (pMsg->message == WM_KEYDOWN &&
-		pMsg->wParam == VK_RETURN &&
-		GetFocus() == &mListInv)
-	{
-		int sel_pos = mListInv.GetCurSel();
-		if (pos_id_inv.count(sel_pos) ) {
-			if (pos_id_inv[sel_pos] == 0) {
-				//Это статус, по нему нельзя жмакать, просто сообщаем гудком
-				MessageBeep(MB_OK);
-			}
-			else {
-				CString res;
-				bool isMenuItem = (pos_id_inv[sel_pos] > 1000);
-				if (isMenuItem) res.Format(L"%d", pos_id_inv[sel_pos] - 1000);
-				else res.Format(L"%d", pos_id_inv[sel_pos]);
-				if (inv_save.IsEmpty() && !isMenuItem) {
-					inv_save = res;
-					CString currText;
-					mListInv.GetText(sel_pos, currText);
-					savedSelInv = currText;//сохраняем выбранный текст
-					currText += L" (выбран)";
-					mListInv.SetDlgItemTextW(sel_pos, currText);
-					mListInv.DeleteString(sel_pos);
-					mListInv.InsertString(sel_pos, currText);
-					mListInv.SetCurSel(sel_pos);
-				}
-				else {
-					if (res != inv_save && !inv_save.IsEmpty()) res = inv_save + L"," + res;
-					inv_save.Empty();
-					int total_list_sz = mListInv.GetCount();
-					CString selText;
-					mListInv.GetText(sel_pos, selText);
-					TryInsteadCommand(res, L"действие \'" + selText + L"\' на '"+ savedSelInv + L"\'");
-					if (mListInv.GetCount() == total_list_sz) {
-						mListInv.SetCurSel(sel_pos);
-					}
-					else if (isMenuItem && (mListInv.GetCount() > sel_pos)) {
-						mListInv.SetCurSel(sel_pos);
-					}
-
-					if (mListInv.GetCurSel() == LB_ERR && mListInv.GetCount() > 0)
-					{
-						mListInv.SetCurSel(0);
-					}
-				}
-			}
-		}
-
-	}
-
-    return CFormView::PreTranslateMessage(pMsg);
-}
-
-void CPlainInsteadView::SetOutputText(CString newText, BOOL useHistory)
-{
-	//Пытаемся автоматический найти меню из вывода
+	// detect a switch to the menu mode
 	if (GlobalManager::getInstance().isAutoMenuDetect() && !GlobalManager::getInstance().isUseMenu())
 	{
-		//CArray<CString,CString> str;
-		CString field;
-		int index = 0;
-		while (AfxExtractSubString(field,newText,index,_T(',')))
+		size_t start = 0;
+		while (true)
 		{
-			//Нашли ключевую фразу меню
-			if (field.Compare(GlobalManager::getInstance().keyMenuString()) == 0)
+			size_t comma = newText.find(L',', start);
+			std::wstring field = newText.substr(start, (comma == std::wstring::npos) ? std::wstring::npos : comma - start);
+			if (field == GlobalManager::getInstance().keyMenuString())
 			{
 				GlobalManager::getInstance().setUseMenu();
 				break;
 			}
-			//str.Add(field);
-			++index;
+			if (comma == std::wstring::npos) break;
+			start = comma + 1;
 		}
 	}
 
 	if (GlobalManager::getInstance().isUserStartGame() && useHistory)
 	{
-		//Добавляем предыдущий ответ к истории
+		// append the response to the history
 		GlobalManager::getInstance().appendLastRespond(newText);
 	}
-    m_OutEdit.SetWindowTextW(newText);
+	SetWindowTextW(m_hOutEdit, newText.c_str());
 	m_newText = newText;
-    //m_InputEdit.SetWindowTextW(L"");
-	//m_InputEdit.SetFocus();
-	//300 мс задержка для выдачи речи
-	//SetTimer(ID_TIMER_1,300,NULL);
 }
 
 void CPlainInsteadView::InitFocusLogic()
 {
-	mListScene.SetFocus();
+	SetFocus(m_hListScene);
 	UpdateFocusLogic();
 }
 
 void CPlainInsteadView::UpdateFocusLogic()
 {
-	if (!mListScene.IsWindowEnabled() && mListScene.GetCount() > 0) mListScene.EnableWindow(true);
-	if (!mListInv.IsWindowEnabled() && mListInv.GetCount() > 0) mListInv.EnableWindow(true);
-	if (!mListWays.IsWindowEnabled() && mListWays.GetCount() > 0) mListWays.EnableWindow(true);
+	int cntScene = (int)SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0);
+	int cntInv = (int)SendMessageW(m_hListInv, LB_GETCOUNT, 0, 0);
+	int cntWays = (int)SendMessageW(m_hListWays, LB_GETCOUNT, 0, 0);
+	HWND focused = GetFocus();
 
-	if ((GetFocus() == &mListScene) && (mListScene.GetCount() == 0))
+	if (!IsWindowEnabled(m_hListScene) && cntScene > 0) EnableWindow(m_hListScene, TRUE);
+	if (!IsWindowEnabled(m_hListInv) && cntInv > 0) EnableWindow(m_hListInv, TRUE);
+	if (!IsWindowEnabled(m_hListWays) && cntWays > 0) EnableWindow(m_hListWays, TRUE);
+
+	if (focused == m_hListScene && cntScene == 0)
 	{
-		if (mListInv.GetCount() > 0) mListInv.SetFocus();
-		else if (mListWays.GetCount() > 0) mListWays.SetFocus();
-		else m_OutEdit.SetFocus();
+		if (cntInv > 0) SetFocus(m_hListInv);
+		else if (cntWays > 0) SetFocus(m_hListWays);
+		else SetFocus(m_hOutEdit);
 	}
-	else if ((GetFocus() == &mListInv) && (mListInv.GetCount() == 0))
+	else if (focused == m_hListInv && cntInv == 0)
 	{
-		if (mListScene.GetCount() > 0) mListScene.SetFocus();
-		else if (mListWays.GetCount() > 0) mListWays.SetFocus();
-		else m_OutEdit.SetFocus();
+		if (cntScene > 0) SetFocus(m_hListScene);
+		else if (cntWays > 0) SetFocus(m_hListWays);
+		else SetFocus(m_hOutEdit);
 	}
-	else if ((GetFocus() == &mListWays) && (mListWays.GetCount() == 0))
+	else if (focused == m_hListWays && cntWays == 0)
 	{
-		if (mListScene.GetCount() > 0) mListScene.SetFocus();
-		else if (mListInv.GetCount() > 0) mListInv.SetFocus();
-		else m_OutEdit.SetFocus();
+		if (cntScene > 0) SetFocus(m_hListScene);
+		else if (cntInv > 0) SetFocus(m_hListInv);
+		else SetFocus(m_hOutEdit);
 	}
 
-	if (mListScene.GetCount() == 0) mListScene.EnableWindow(false);
-	if (mListInv.GetCount() == 0) mListInv.EnableWindow(false);
-	if (mListWays.GetCount() == 0) mListWays.EnableWindow(false);
-}
-
-void CPlainInsteadView::OnEnSetfocusEditOut()
-{
-	//Убирает выделение со всего Edit, при переключении
-	//Текущая позиция курсора
-	int selFrom = LOWORD(m_OutEdit.GetSel());
-	int selTo =   HIWORD(m_OutEdit.GetSel());
-	CString txtOut;
-	m_OutEdit.GetWindowTextW(txtOut);
-	if (selFrom == 0 && (txtOut.GetLength() == (selTo-selFrom)))
-	{
-		m_OutEdit.SetSel(0);
-	}
-}
-
-void CPlainInsteadView::OnTimer( UINT uTime)
-{
-	if (m_auto_say) MultiSpeech::getInstance().Say(m_newText);
-	if (m_jump_to_out) m_OutEdit.SetFocus();
-	KillTimer(ID_TIMER_1);
+	if (cntScene == 0) EnableWindow(m_hListScene, FALSE);
+	if (cntInv == 0) EnableWindow(m_hListInv, FALSE);
+	if (cntWays == 0) EnableWindow(m_hListWays, FALSE);
 }
 
 void CPlainInsteadView::UpdateSettings()
 {
 	CIniFile mainSettings;
-	m_auto_say = mainSettings.GetInt(L"main", L"m_CheckAutosay", 1 );
-	m_jump_to_out = mainSettings.GetInt(L"main", L"m_CheckSetFocusToOut", 0 );
-	//m_BeepList = mainSettings.GetInt(L"main", L"mCheckSoundList", 1);
+	m_auto_say = mainSettings.GetInt(L"main", L"m_CheckAutosay", 1) != 0;
+	m_jump_to_out = mainSettings.GetInt(L"main", L"m_CheckSetFocusToOut", 0) != 0;
 	UpdateFontSize();
-	//Обновляем музыкальные стили
+	// announce sounds set
 	int currWaveStyle = mainSettings.GetInt(L"main", L"m_ComboStyleAnnounce", 0);
 	char wave_pos[30];
 	sprintf(wave_pos, "sounds\\scene%d.wav", currWaveStyle + 1);
-	if (!wave_scene) delete wave_scene;
+	if (wave_scene) delete wave_scene;
 	wave_scene = new Wave(wave_pos);
 
 	sprintf(wave_pos, "sounds\\inventory%d.wav", currWaveStyle + 1);
-	if (!wave_inv) delete wave_inv;
+	if (wave_inv) delete wave_inv;
 	wave_inv = new Wave(wave_pos);
 
 	sprintf(wave_pos, "sounds\\ways%d.wav", currWaveStyle + 1);
-	if (!wave_ways) delete wave_ways;
+	if (wave_ways) delete wave_ways;
 	wave_ways = new Wave(wave_pos);
 }
 
 void CPlainInsteadView::UpdateFontSize()
 {
 	CIniFile mainSettings;
-	LOGFONT lf;   
-	memset(&lf, 0, sizeof(LOGFONT));
-	int currFontHeight = mainSettings.GetInt(L"main", L"fontHeight", 20 );
+	LOGFONTW lf;
+	memset(&lf, 0, sizeof(LOGFONTW));
+	int currFontHeight = mainSettings.GetInt(L"main", L"fontHeight", 20);
 	currInpHeight = currFontHeight + 10;
-	lf.lfHeight = currFontHeight;                // Request a fontH font
-	wcscpy(lf.lfFaceName, L"Arial");    // with face name "Arial".
-	m_fontOut.DeleteObject();
-	m_fontOut.CreateFontIndirect(&lf);    // Create the font.
-	m_OutEdit.SetFont(&m_fontOut);
- 
-	memset(&lf, 0, sizeof(LOGFONT));
-	lf.lfHeight = currFontHeight;                // Request a fontH font
-	wcscpy(lf.lfFaceName, L"Arial");    // with face name "Arial".
-	m_fontIn.DeleteObject();
-	m_fontIn.CreateFontIndirect(&lf);    // Create the font.
-	//m_InputEdit.SetFont(&m_fontIn);
+	lf.lfHeight = currFontHeight;
+	wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Arial");
+	if (m_fontOut) DeleteObject(m_fontOut);
+	m_fontOut = CreateFontIndirectW(&lf);
+	SendMessageW(m_hOutEdit, WM_SETFONT, (WPARAM)m_fontOut, TRUE);
 
-	outFontCol = mainSettings.GetInt(L"main", L"OutFontCol", RGB(0, 0, 0) );
-	outBackCol = mainSettings.GetInt(L"main", L"OutBackCol", RGB(240, 240, 240) );
-	inFontCol = mainSettings.GetInt(L"main", L"InFontCol", RGB(0, 0, 0) );
-	inBackCol = mainSettings.GetInt(L"main", L"InBackCol", RGB(255, 255, 255) );
+	outFontCol = mainSettings.GetInt(L"main", L"OutFontCol", RGB(0, 0, 0));
+	outBackCol = mainSettings.GetInt(L"main", L"OutBackCol", RGB(240, 240, 240));
+	inFontCol = mainSettings.GetInt(L"main", L"InFontCol", RGB(0, 0, 0));
+	inBackCol = mainSettings.GetInt(L"main", L"InBackCol", RGB(255, 255, 255));
 }
-
-HBRUSH CPlainInsteadView::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
-{
-	HBRUSH hbr = CFormView::OnCtlColor(pDC, pWnd, nCtlColor);
-
-	// TODO:  Измените любые атрибуты DC
-	if(pWnd->GetDlgCtrlID() == IDC_EDIT_OUT)   
-	{      
-		pDC->SetTextColor( outFontCol );   
-		pDC->SetBkColor( outBackCol ); 
-	}
-
-	// TODO:  Вернуть другое значение дескриптора кисти, если оно не определено по умолчанию
-	return hbr;
-}
-
-void CPlainInsteadView::OnDestroy()
-{
-	CFormView::OnDestroy();
-
-	// TODO: добавьте свой код обработчика сообщений
-}
-
-void CPlainInsteadView::OnShowWindow(BOOL bShow, UINT nStatus)
-{
-	CFormView::OnShowWindow(bShow, nStatus);
-
-	// TODO: добавьте свой код обработчика сообщений
-}
-
-void CPlainInsteadView::OnClose()
-{
-	// TODO: добавьте свой код обработчика сообщений или вызов стандартного
-	
-	CFormView::OnClose();
-}
-
 
 static int countExacWnd = 0;
-static CString lastWndText = L"";
-static CString currWindText = L"";
+static std::wstring lastWndText;
+static std::wstring currWindText;
 #define MAX_STABLE_COUNT 3
-
-static void AppendTextToEditCtrl(CEdit& edit, LPCTSTR pszText)
-{
-	// get the initial text length
-	int nLength = edit.GetWindowTextLength();
-	// put the selection at the end of text
-	edit.SetSel(nLength, nLength);
-	// replace the selection
-	edit.ReplaceSel(pszText);
-}
-
-void CALLBACK EXPORT OnTimerUpdateText(HWND hWnd, UINT nMsg, UINT nIDEvent, DWORD dwTime)
-{
-	//Только если начали игру
-	if (GlobalManager::getInstance().isUserStartGame())
-	{
-		/*
-		if (!WasReadScreen)
-		{
-			CString toDisp(temp_buff);
-
-			CPlainInsteadView::GetCurrentView()->SetOutputText(toDisp);
-
-			//WasReadScreen = TRUE;
-		}
-		*/
-		//Открываем диалоговые окна
-		/*
-		if (AskSaveLoadTadsGame)
-		{
-			KillTimer(hWnd, ID_TIMER_2); //Останавливаем таймер
-
-			CFileDialog* dlg;
-			CFileDialog fileSaveDialog(FALSE,L"*.sav",NULL,OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT, L"Tads save (*.sav)|*.sav");	//объект класса выбора файла
-			CFileDialog fileOpenDialog(TRUE,NULL,NULL,OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT, L"Tads save (*.sav)|*.sav");	//объект класса выбора файла
-			if (IsNeedSaveTadsGame) dlg = &fileSaveDialog;
-			else dlg = &fileOpenDialog;
-			CString dir;
-			GetCurrentDirectory( MAX_PATH, CStrBuf(dir, MAX_PATH) );
-			dir.Append(L"\\saves");
-			dlg->m_ofn.lpstrInitialDir  = dir;
-			int result = dlg->DoModal();	//запустить диалоговое окно
-			if (result==IDOK)	//если файл выбран
-			{
-				//Очищаем поле вывода
-				if (IsNeedSaveTadsGame) GlobalManager::getInstance().userSavedFile();
-				CPlainInsteadView::GetCurrentView()->SetOutputText(L"");
-				GlobalManager::lastString = 0;
-				CString filePath = dlg->GetPathName();
-				CT2A ascii(filePath);
-				strcpy(TadsFileName,ascii);
-				IsOkSaveLoadTadsGame = TRUE;
-			}
-			//Завершаем запрос
-			AskSaveLoadTadsGame = FALSE;
-			//Снова запускаем таймер обновления текста
-			SetTimer(hWnd, ID_TIMER_2,100,OnTimerUpdateText);
-		}
-		*/
-	}
-}
 
 void CPlainInsteadView::OnFullHistory()
 {
-	//Просмотр всей истории, если она есть
+	// show the full history, if available
 	if (GlobalManager::getInstance().isUserStartGame())
 	{
-		CString fullHist = GlobalManager::getInstance().fullHistoryData();
-		if (!fullHist.IsEmpty())
+		std::wstring fullHist = GlobalManager::getInstance().fullHistoryData();
+		if (!fullHist.empty())
 		{
 			SetOutputText(fullHist, FALSE);
 		}
@@ -899,11 +656,11 @@ void CPlainInsteadView::OnFullHistory()
 
 void CPlainInsteadView::OnBackHist()
 {
-	//Двигаемся назад по истории
+	// step back in the history
 	if (GlobalManager::getInstance().isUserStartGame())
 	{
-		CString prevStep = GlobalManager::getInstance().previosHistoryData();
-		if (!prevStep.IsEmpty())
+		std::wstring prevStep = GlobalManager::getInstance().previosHistoryData();
+		if (!prevStep.empty())
 		{
 			SetOutputText(prevStep, FALSE);
 		}
@@ -912,11 +669,11 @@ void CPlainInsteadView::OnBackHist()
 
 void CPlainInsteadView::OnForwHist()
 {
-	//Двигаемся вперёд по истории
+	// step forward in the history
 	if (GlobalManager::getInstance().isUserStartGame())
 	{
-		CString nextStep = GlobalManager::getInstance().nextHistoryData();
-		if (!nextStep.IsEmpty())
+		std::wstring nextStep = GlobalManager::getInstance().nextHistoryData();
+		if (!nextStep.empty())
 		{
 			SetOutputText(nextStep, FALSE);
 		}
@@ -925,8 +682,8 @@ void CPlainInsteadView::OnForwHist()
 
 void CPlainInsteadView::ShowTextFromResource(LPCWSTR res_id)
 {
-	bool ok=false;
-	HRSRC hResource = FindResource(NULL, res_id, L"Text");
+	bool ok = false;
+	HRSRC hResource = FindResourceW(NULL, res_id, L"Text");
 
 	if (hResource)
 	{
@@ -939,149 +696,98 @@ void CPlainInsteadView::ShowTextFromResource(LPCWSTR res_id)
 				DWORD dwResourceSize = SizeofResource(NULL, hResource);
 				if (0 != dwResourceSize)
 				{
-					 // Use pLockedResource and dwResourceSize however you want
 					LPBYTE sData = (LPBYTE)pLockedResource;
 					char* text = (char*)sData;
-					CString sText(text);
+					std::wstring sText = utf8_to_wide(text);
 					SetOutputText(sText, FALSE);
-					ok=true;
+					ok = true;
 				}
 			}
 		}
 	}
 
-	if (ok==false)
+	if (ok == false)
 	{
-		SetOutputText(L"Ошибка. Не могу отобразить текст справки.", FALSE);
+		SetOutputText(L"РћС€РёР±РєР°. РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С‚РµРєСЃС‚ СЃРїСЂР°РІРєРё.", FALSE);
 	}
 }
 
 void CPlainInsteadView::OnManualStarter()
 {
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT1));
+	ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT1));
 }
 
 void CPlainInsteadView::OnManualCmdList()
 {
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT2));
+	ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT2));
 }
 
 void CPlainInsteadView::OnManualHowPlay()
 {
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT3));
-}
-void CPlainInsteadView::OnManualRuk1()
-{
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT4));
+	ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT3));
 }
 
-void CPlainInsteadView::OnManualRuk2()
+void CPlainInsteadView::OnManualRuk(int num)
 {
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT5));
-}
-
-void CPlainInsteadView::OnManualRuk3()
-{
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT6));
-}
-
-void CPlainInsteadView::OnManualRuk4()
-{
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT7));
-}
-
-void CPlainInsteadView::OnManualRuk5()
-{
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT8));
-}
-
-void CPlainInsteadView::OnManualRuk6()
-{
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT9));
-}
-
-void CPlainInsteadView::OnManualRuk7()
-{
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT10));
+	switch (num)
+	{
+	case 1: ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT4)); break;
+	case 2: ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT5)); break;
+	case 3: ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT6)); break;
+	case 4: ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT7)); break;
+	case 5: ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT8)); break;
+	case 6: ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT9)); break;
+	case 7: ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT10)); break;
+	}
 }
 
 void CPlainInsteadView::OnManualBigWrap()
 {
-	ShowTextFromResource(MAKEINTRESOURCE(IDR_TEXT11));
+	ShowTextFromResource(MAKEINTRESOURCEW(IDR_TEXT11));
 }
 
 void CPlainInsteadView::OnFindText()
 {
-	if( NULL == m_pFindDialog )
+	if (NULL == m_hFindDialog || !IsWindow(m_hFindDialog))
 	{
-		m_pFindDialog = new CFindReplaceDialog(); // Must be created on the heap.
-		m_pFindDialog->Create( TRUE, _T(""), _T(""), FR_DOWN | FR_HIDEUPDOWN | FR_HIDEWHOLEWORD, this );
-		m_pFindDialog->m_fr.lStructSize = sizeof(FINDREPLACE);
-		m_pFindDialog->m_fr.hwndOwner = this->m_hWnd;
+		// the common find dialog; the buffer must live as long as the dialog
+		static wchar_t szFindWhat[256] = L"";
+		FINDREPLACEW fr;
+		memset(&fr, 0, sizeof(fr));
+		fr.lStructSize = sizeof(fr);
+		fr.hwndOwner = m_hWndView;
+		fr.lpstrFindWhat = szFindWhat;
+		fr.wFindWhatLen = 256;
+		fr.Flags = FR_DOWN | FR_HIDEUPDOWN | FR_HIDEWHOLEWORD;
+		m_hFindDialog = FindTextW(&fr);
 	}
 }
 
-LRESULT CPlainInsteadView::OnFindReplace(WPARAM wParam, LPARAM lParam)
+bool CPlainInsteadView::FindStringInEdit(std::wstring FindName, bool bMatchCase)
 {
-	ASSERT(m_pFindDialog != NULL);
-
-    // If the FR_DIALOGTERM flag is set,
-    // Закрываем окно
-    if (m_pFindDialog->IsTerminating())
-    {
-        m_pFindDialog = NULL;
-        return 0;
-    }
-
-    // If the FR_FINDNEXT flag is set,
-    // Ищем строку
-    if(m_pFindDialog->FindNext())
-    {
-        //read data from dialog
-        CString FindName = m_pFindDialog->GetFindString();
-        bool bMatchCase = m_pFindDialog->MatchCase() == TRUE;
-        //bool bMatchWholeWord = m_pFindDialog->MatchWholeWord() == TRUE;
-        //bool bSearchDown = m_pFindDialog->SearchDown() == TRUE;
-
-        //with given name do search
-        if ( FindStringInEdit(FindName, bMatchCase) )
-		{
-			wasFind = true;
-			lastSearchStr = FindName;
-			lastMatchCase = bMatchCase;
-
-			m_pFindDialog->DestroyWindow();
-			m_pFindDialog = NULL;
-			return 0;
-		}
-		else
-		{
-			MessageBeep(MB_ICONSTOP);
-		}
-    }
-
-	return 0;
-}
-
-bool CPlainInsteadView::FindStringInEdit(CString FindName, bool bMatchCase)
-{
-	//Поиск в editBox
-	CString sEdit;
-	m_OutEdit.GetWindowTextW(sEdit);
-	//Если не надо учитывать регистр, то выравнием буквы
+	// search in the edit box
+	int len = GetWindowTextLengthW(m_hOutEdit);
+	std::vector<wchar_t> buf(len + 1);
+	GetWindowTextW(m_hOutEdit, &buf[0], len + 1);
+	std::wstring sEdit(&buf[0]);
+	// convert to lower case if needed
 	if (!bMatchCase)
 	{
-		FindName.MakeLower();
-		sEdit.MakeLower();
+		_wcsupr_s(&FindName[0], FindName.size() + 1);
+		FindName = _wcsdup(FindName.c_str());
+		std::transform(FindName.begin(), FindName.end(), FindName.begin(), ::towlower);
+		std::transform(sEdit.begin(), sEdit.end(), sEdit.begin(), ::towlower);
 	}
-	//Текущая позиция курсора
-	int sel = LOWORD(m_OutEdit.GetSel());
-	//Ищем вниз
-	int resPos = sEdit.Find(FindName, sel+1);
-	//Нашли - выделяем
-	if (resPos >= 0)
+	// get the current selection
+	DWORD sel = (DWORD)SendMessageW(m_hOutEdit, EM_GETSEL, 0, 0);
+	int selPos = LOWORD(sel);
+	// search
+	size_t resPos = sEdit.find(FindName, selPos + 1);
+	// found - select
+	if (resPos != std::wstring::npos)
 	{
-		m_OutEdit.SetSel(resPos,resPos+FindName.GetLength());
+		SendMessageW(m_hOutEdit, EM_SETSEL, resPos, resPos + FindName.size());
+		SendMessageW(m_hOutEdit, EM_SCROLLCARET, 0, 0);
 		return true;
 	}
 	return false;
@@ -1097,154 +803,101 @@ void CPlainInsteadView::OnFindNext()
 
 void CPlainInsteadView::OnHistoryStop()
 {
-	//Остановка записи истории и команд
+	// disable the history
 	GlobalManager::getInstance().enableHistory(false);
-	SetOutputText(L"ИСТОРИЯ ОСТАНОВЛЕНА",FALSE);
+	SetOutputText(L"РСЃС‚РѕСЂРёСЏ РѕС‚РєР»СЋС‡РµРЅР°", FALSE);
 }
 
 void CPlainInsteadView::OnHistoryStart()
 {
-	//Возобновление записи истории
+	// enable the history
 	GlobalManager::getInstance().enableHistory(true);
-	SetOutputText(L"ИСТОРИЯ ПРОДОЛЖЕНА",FALSE);
+	SetOutputText(L"РСЃС‚РѕСЂРёСЏ РІРєР»СЋС‡РµРЅР°", FALSE);
 }
 
 
 void CPlainInsteadView::OnUpdateOutView()
 {
-	// TODO: добавьте свой код обработчика команд
 	if (GlobalManager::getInstance().isUserStartGame())
 	{
 		int sel_pos = 0;
-		CListBox* curr_box = 0;
-		if (GetFocus() == &mListInv) {
-			sel_pos = mListInv.GetCurSel();
-			curr_box = &mListInv;
+		HWND curr_box = 0;
+		HWND focused = GetFocus();
+		if (focused == m_hListInv) {
+			sel_pos = (int)SendMessageW(m_hListInv, LB_GETCURSEL, 0, 0);
+			curr_box = m_hListInv;
 		}
-		else if (GetFocus() == &mListScene) {
-			sel_pos = mListScene.GetCurSel();
-			curr_box = &mListScene;
+		else if (focused == m_hListScene) {
+			sel_pos = (int)SendMessageW(m_hListScene, LB_GETCURSEL, 0, 0);
+			curr_box = m_hListScene;
 		}
-		else if (GetFocus() == &mListWays) {
-			sel_pos = mListWays.GetCurSel();
-			curr_box = &mListWays;
+		else if (focused == m_hListWays) {
+			sel_pos = (int)SendMessageW(m_hListWays, LB_GETCURSEL, 0, 0);
+			curr_box = m_hListWays;
 		}
 
-		TryInsteadCommand(L"",L"обновить");
+		TryInsteadCommand(L"", L"РћР±РЅРѕРІРёС‚СЊ");
 
 		if (!m_jump_to_out && curr_box)
 		{
-			if (curr_box->GetCount() > sel_pos) {
-				curr_box->SetCurSel(sel_pos);
+			int cnt = (int)SendMessageW(curr_box, LB_GETCOUNT, 0, 0);
+			if (cnt > sel_pos) {
+				SendMessageW(curr_box, LB_SETCURSEL, sel_pos, 0);
 			}
 		}
 	}
 }
 
 
-void CPlainInsteadView::OnStnClickedStaticScene()
+void CPlainInsteadView::OnLbnSetfocus(HWND hList, const std::wstring& announce)
 {
-	// TODO: добавьте свой код обработчика уведомлений
-}
-
-
-void CPlainInsteadView::OnLbnSetfocusListScene()
-{
-	if (GetFocus() == &mListScene)
+	if (GetFocus() == hList)
 	{
-		mListInv.SetCurSel(-1);
-		mListWays.SetCurSel(-1);
-		MultiSpeech::getInstance().Say(L"объекты");
+		if (hList != m_hListScene) SendMessageW(m_hListScene, LB_SETCURSEL, (WPARAM)-1, 0);
+		if (hList != m_hListInv) SendMessageW(m_hListInv, LB_SETCURSEL, (WPARAM)-1, 0);
+		if (hList != m_hListWays) SendMessageW(m_hListWays, LB_SETCURSEL, (WPARAM)-1, 0);
+		MultiSpeech::getInstance().Say(announce);
 	}
-	if (mListScene.GetCurSel() == LB_ERR && mListScene.GetCount() > 0)
+	int cnt = (int)SendMessageW(hList, LB_GETCOUNT, 0, 0);
+	if ((int)SendMessageW(hList, LB_GETCURSEL, 0, 0) == LB_ERR && cnt > 0)
 	{
-		mListScene.SetCurSel(0);
+		SendMessageW(hList, LB_SETCURSEL, 0, 0);
 	}
 }
 
 
-void CPlainInsteadView::OnLbnSetfocusListInv()
+void CPlainInsteadView::OnGoto(HWND hList)
 {
-	if (GetFocus() == &mListInv) {
-		mListWays.SetCurSel(-1);
-		mListScene.SetCurSel(-1);
-		MultiSpeech::getInstance().Say(L"инвентарь");
-	}
-	// TODO: добавьте свой код обработчика уведомлений
-	if (mListInv.GetCurSel() == LB_ERR && mListInv.GetCount() > 0)
+	int cnt = (int)SendMessageW(hList, LB_GETCOUNT, 0, 0);
+	if (cnt > 0 && GetFocus() != hList)
 	{
-		mListInv.SetCurSel(0);
-	}
-}
-
-
-void CPlainInsteadView::OnLbnSetfocusListWays()
-{
-	if (GetFocus() == &mListWays)
-	{
-		mListInv.SetCurSel(-1);
-		mListScene.SetCurSel(-1);
-		MultiSpeech::getInstance().Say(L"пути");
-	}
-	// TODO: добавьте свой код обработчика уведомлений
-	if (mListWays.GetCurSel() == LB_ERR && mListWays.GetCount() > 0)
-	{
-		mListWays.SetCurSel(0);
-	}
-}
-
-
-void CPlainInsteadView::OnGotoScene()
-{
-	if (mListScene.GetCount() > 0 && GetFocus() != &mListScene)
-	{
-		mListScene.SetFocus();
-	}
-}
-
-
-void CPlainInsteadView::OnGotoInv()
-{
-	if (mListInv.GetCount() > 0 && GetFocus() != &mListInv)
-	{
-		mListInv.SetFocus();
-	}
-}
-
-
-void CPlainInsteadView::OnGotoWays()
-{
-	if (mListWays.GetCount() > 0 && GetFocus() != &mListWays)
-	{
-		mListWays.SetFocus();
+		SetFocus(hList);
 	}
 }
 
 
 void CPlainInsteadView::OnMenuLog()
 {
-	// TODO: добавьте свой код обработчика команд
 	isLogOn = !isLogOn;
-	CMenu *pMenu = AfxGetApp()->GetMainWnd()->GetMenu();
+	HMENU pMenu = AppGetMainMenu();
 	if (pMenu != NULL)
 	{
 		if (isLogOn) {
-			pMenu->CheckMenuItem(ID_MENU_LOG, MF_CHECKED | MF_BYCOMMAND);
+			CheckMenuItem(pMenu, ID_MENU_LOG, MF_CHECKED | MF_BYCOMMAND);
 			// uses printf() format specifications for time
-			CString t = CTime::GetCurrentTime().Format("%y%m%d_%H%M");
-			TCHAR buff[MAX_PATH];
-			::GetModuleFileName(NULL, buff, sizeof(buff));
-			CString baseDir = buff;
-			baseDir = baseDir.Left(baseDir.ReverseFind(_T('\\')) + 1);
-			logFileName = baseDir + L"logs\\" + L"log_" + t +L".txt";
-			AfxMessageBox(L"Логирование включено. Лог сохраниться в папке logs под именем: "+ logFileName);
+			SYSTEMTIME st;
+			GetLocalTime(&st);
+			TCHAR t[32];
+			swprintf_s(t, L"%02d%02d%02d_%02d%02d", st.wYear % 100, st.wMonth, st.wDay, st.wHour, st.wMinute);
+			std::wstring baseDir = GetExeDir();
+			logFileName = baseDir + L"logs\\" + L"log_" + t + L".txt";
+			MessageBoxW(m_hWndMain, (std::wstring(L"Р’РєР»СЋС‡РµРЅРѕ Р»РѕРіРёСЂРѕРІР°РЅРёРµ. Р¤Р°Р№Р» СЃРѕС…СЂР°РЅРёС‚СЃСЏ РІ РїР°РїРєРµ logs РїРѕРґ РёРјРµРЅРµРј: ") + logFileName).c_str(), L"Р›РѕРіРёСЂРѕРІР°РЅРёРµ", MB_OK);
 			isStartComment = false;
-			
 		}
 		else
 		{
-			pMenu->CheckMenuItem(ID_MENU_LOG, MF_UNCHECKED | MF_BYCOMMAND);
-			m_OutEdit.SetReadOnly(TRUE);
+			CheckMenuItem(pMenu, ID_MENU_LOG, MF_UNCHECKED | MF_BYCOMMAND);
+			SendMessageW(m_hOutEdit, EM_SETREADONLY, TRUE, 0);
 			isStartComment = false;
 		}
 	}
@@ -1258,22 +911,15 @@ void CPlainInsteadView::TurnOffLogging()
 
 void CPlainInsteadView::OnMenuAddComment()
 {
-	// TODO: добавьте свой код обработчика команд
 	if (isLogOn) {
 		isStartComment = true;
-		CString prepareComment = L"*";
-		m_OutEdit.SetWindowTextW(prepareComment);
-		m_OutEdit.SetReadOnly(FALSE);
-		m_OutEdit.SetFocus();
+		SendMessageW(m_hOutEdit, EM_SETREADONLY, FALSE, 0);
+		SetWindowTextW(m_hOutEdit, L"*");
+		SetFocus(m_hOutEdit);
+		SendMessageW(m_hOutEdit, EM_SETSEL, 1, 1);
 	}
 	else
 	{
-		AfxMessageBox(L"Пункт работает только при включенном логировании!");
+		MessageBoxW(m_hWndMain, L"РќСѓР¶РЅРѕ РІРєР»СЋС‡РёС‚СЊ Р»РѕРіРёСЂРѕРІР°РЅРёРµ РґР»СЏ РґРѕР±Р°РІР»РµРЅРёСЏ РєРѕРјРјРµРЅС‚Р°СЂРёСЏ!", L"РћС€РёР±РєР°", MB_OK | MB_ICONERROR);
 	}
-}
-
-
-void CPlainInsteadView::OnUpdateMenuAddComment(CCmdUI *pCmdUI)
-{
-	pCmdUI->Enable(isLogOn);
 }

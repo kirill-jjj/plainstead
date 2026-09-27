@@ -1,95 +1,77 @@
 #pragma once
-#include "afxcmn.h"
-#include "afxwin.h"
-#include <vector>
-#include <set>
-#include <map>
+#include "stdafx.h"
 
-
-// диалоговое окно LauncherDialog
-
-class LauncherDialog : public CDialog
+// Launcher dialog (pure Win32)
+class LauncherDialog
 {
-	DECLARE_DYNAMIC(LauncherDialog)
-
 public:
-	LauncherDialog(CWnd* pParent = NULL);   // стандартный конструктор
+	LauncherDialog(HWND hWndParent = NULL);
 	virtual ~LauncherDialog();
+	INT_PTR DoModal(HWND hWndParent);
 	bool isWantStartGame();
-	CString getStartGamePath();
-	CString getStartGameTitle();
-
-// ƒанные диалогового окна
-#ifdef AFX_DESIGN_TIME
-	enum { IDD = IDD_LAUNCHERDIALOG };
-#endif
+	std::wstring getStartGamePath();
+	std::wstring getStartGameTitle();
 
 protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // поддержка DDX/DDV
 	void showInstalledTabControls();
 	void showNewTabControls();
 	void CreateColumns();
 	void RescanInstalled();
-	void AddInstalledGame(CString name, CString version, std::pair<CString, CString> path);
-	void AddNewGame(CString name, CString version, CString sz, CString page, std::pair<CString, CString> downloadPageAndInstallName);
-	void SetCell(CListCtrl& ctrl, CString value, int nRow, int nCol);
-	void UpdateNewGamesFromUrl(CString url, CString temp_xmlfile);
-	void ReadNewGamesFromXMLAndAdd(CString temp_xmlfile);
-	void UpdateNewGamesRssAdditionalInfoFromUrl(CString url, CString temp_xmlfile);
-	void ReadAdditionalInfoFromXMLRss(CString temp_xmlfile);
-	//bool UpdateApprovedGamesFromUrl(CString url, CString res_path);
-	//void UpdateApprovedFromFile();
+	void AddInstalledGame(const std::wstring& name, const std::wstring& version, const std::pair<std::wstring, std::wstring>& path);
+	void AddNewGame(const std::wstring& name, const std::wstring& version, const std::wstring& sz, const std::wstring& page, const std::pair<std::wstring, std::wstring>& downloadPageAndInstallName);
+	void SetCell(HWND hList, const std::wstring& value, int nRow, int nCol);
+	void UpdateNewGamesFromUrl(const std::wstring& url, const std::wstring& temp_xmlfile);
+	void ReadNewGamesFromXMLAndAdd(const std::wstring& temp_xmlfile);
+	void UpdateNewGamesRssAdditionalInfoFromUrl(const std::wstring& url, const std::wstring& temp_xmlfile);
+	void ReadAdditionalInfoFromXMLRss(const std::wstring& temp_xmlfile);
 	void ClearNewList();
-	void SortColumn(CListCtrl* ctrl, int columnIndex, bool ascending);
+	void SortColumn(HWND ctrl, int columnIndex, bool ascending);
 
-	//std::map<CString/*game name*/, CString/*game path*/> installedGamePath;
-	std::set<CString> installedGameNameCache; //кеш дл€ быстрой проверки
+	std::set<std::wstring> installedGameNameCache; // all names of installed games
 
-	//std::vector<std::pair<CString/*name*/, CString/*page*/> > networkGameDWPageAndName;
-	//std::set<CString> networkGameName;
-	//CString approvedFile;
-	std::vector<CString> repoList;
-	std::vector<CString> rssList;
-	std::map<CString/*game name*/, std::pair<CString /*approve*/, CString /*info*/> > approveInfo;
-	std::map<CString/*game title*/, std::pair<CString /*pubDate*/, CString /*Desc*/> > rssInfo;
+	std::vector<std::wstring> repoList;
+	std::vector<std::wstring> rssList;
+	std::map<std::wstring/*game name*/, std::pair<std::wstring/*approve*/, std::wstring/*info*/> > approveInfo;
+	std::map<std::wstring/*game title*/, std::pair<std::wstring/*pubDate*/, std::wstring/*Desc*/> > rssInfo;
 
-	CString m_stGamePath;
-	CString m_stGameTitle;
-	CString m_gameBaseDir;
+	std::wstring m_stGamePath;
+	std::wstring m_stGameTitle;
+	std::wstring m_gameBaseDir;
+	std::wstring currDir;
 	bool    m_wantPlay;
 	int     m_lastSelFilter;
 	bool    m_sortInstalledUp;
 	int     m_sortInstalledLastItem;
-	
+
 	bool    m_sortNewUp;
 	int     m_sortNewLastItem;
 
-	DECLARE_MESSAGE_MAP()
-public:
-	CTabCtrl m_tab;
-	virtual BOOL OnInitDialog();
-	CListCtrl m_listInstalled;
-	CListCtrl m_listNew;
-	afx_msg void OnTcnSelchangeTab1(NMHDR *pNMHDR, LRESULT *pResult);
-	afx_msg void OnTcnSelchangingTab1(NMHDR *pNMHDR, LRESULT *pResult);
-	CButton m_btnDelete;
-	CButton m_btnUpdate;
-	CButton m_btnInstall;
-	CButton m_btnOpenLink;
-	virtual BOOL PreTranslateMessage(MSG* pMsg);
-	virtual void OnOK();
-	afx_msg void OnBnClickedBtnDelGame();
-	afx_msg void OnBnClickedBtnUpdate();
-	afx_msg void OnBnClickedBtnOpenLink();
-	afx_msg void OnBnClickedBtnInstall();
-	afx_msg void OnBnClickedBtnPlayGamem();
-	CButton m_btnPlayGame;
-	CString currDir;
-	afx_msg void OnBnClickedBtnResumeoldGame2();
-	CButton m_btnResumeGame;
-	CComboBox m_comboFiler;
-	afx_msg void OnCbnSelchangeComboFilter();
-	afx_msg void OnHdnItemclickListInstalled(NMHDR *pNMHDR, LRESULT *pResult);
 private:
-	CButton m_CheckSander;
+	static INT_PTR CALLBACK DlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+	INT_PTR OnInitDialog(HWND hWnd);
+	INT_PTR OnCommand(HWND hWnd, int id, int event, HWND hCtl);
+	INT_PTR OnNotify(HWND hWnd, NMHDR* pNMHDR);
+	BOOL PreTranslateMessage(MSG* pMsg, HWND hWnd);
+	void OnOK();
+	void OnBnClickedBtnDelGame();
+	void OnBnClickedBtnUpdate();
+	void OnBnClickedBtnOpenLink();
+	void OnBnClickedBtnInstall();
+	void OnBnClickedBtnPlayGamem();
+	void OnBnClickedBtnResumeoldGame2();
+	void OnCbnSelchangeComboFilter();
+	void OnHdnItemclickListInstalled(NMHDR* pNMHDR);
+	void OnTabSelChange();
+
+	HWND m_hWnd;
+	HWND m_hTab;
+	HWND m_hListInstalled;
+	HWND m_hListNew;
+	HWND m_hBtnDelete;
+	HWND m_hBtnUpdate;
+	HWND m_hBtnInstall;
+	HWND m_hBtnOpenLink;
+	HWND m_hBtnPlayGame;
+	HWND m_hBtnResumeGame;
+	HWND m_hComboFiler;
 };

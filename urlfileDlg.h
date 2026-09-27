@@ -1,122 +1,69 @@
 #pragma once
-#include "afxcmn.h"
-#include "afxwin.h"
-#include "afxmt.h"
+#include "stdafx.h"
+#include <urlmon.h>
 
-enum
+// Download dialog (pure Win32; replaces the MFC CDialog/CWinThread version)
+class CUrlFileDlg
 {
-	UF_BINDSTATUS_FIRST = BINDSTATUS_FINDINGRESOURCE,
-	UF_BINDSTATUS_LAST = BINDSTATUS_ACCEPTRANGES
-};
-
-/////////////////////////////////////////////////////////////////////////////
-// CUrlFileDlg dialog
-
-class CUrlFileDlg : public CDialog
-{
-// Construction
 public:
-	DECLARE_DYNAMIC(CUrlFileDlg)
-	CUrlFileDlg(CString url, CString filename, CWnd* pParent = NULL);	// standard constructor
+	CUrlFileDlg(const std::wstring& url, const std::wstring& filename);
+	INT_PTR DoModal(HWND hWndParent);
 
 	void StartDownload();
 	bool isGoodLoad();
 
-	struct DOWNLOADSTATUS
+	// IBindStatusCallback implementation
+	class CBSCallbackImpl : public IBindStatusCallback
 	{
-		ULONG ulProgress;
-		ULONG ulProgressMax;
-		ULONG ulStatusCode;
-		LPCWSTR szStatusText;
+	public:
+		CBSCallbackImpl(HWND hWnd, HANDLE hEventStop);
+
+		// IUnknown methods
+		STDMETHOD(QueryInterface)(REFIID riid, void **ppvObject);
+		STDMETHOD_(ULONG, AddRef)();
+		STDMETHOD_(ULONG, Release)();
+
+		// IBindStatusCallback methods
+		STDMETHOD(OnStartBinding)(DWORD, IBinding *);
+		STDMETHOD(GetPriority)(LONG *);
+		STDMETHOD(OnLowResource)(DWORD);
+		STDMETHOD(OnProgress)(ULONG ulProgress, ULONG ulProgressMax, ULONG ulStatusCode, LPCWSTR szStatusText);
+		STDMETHOD(OnStopBinding)(HRESULT, LPCWSTR);
+		STDMETHOD(GetBindInfo)(DWORD *, BINDINFO *);
+		STDMETHOD(OnDataAvailable)(DWORD, DWORD, FORMATETC *, STGMEDIUM *);
+		STDMETHOD(OnObjectAvailable)(REFIID, IUnknown *);
+
+	private:
+		ULONG m_ulObjRefCount;
+		HWND m_hWnd;
+		HANDLE m_hEventStop;
 	};
 
-// Dialog Data
-	//{{AFX_DATA(CUrlFileDlg)
-	// Данные диалогового окна
-#ifdef AFX_DESIGN_TIME
-	enum { IDD = IDD_URLFILE_DIALOG };
-#endif
-	CString	m_strURL;
-	CString m_selFile;
-	bool goodLoad;
-	//}}AFX_DATA
-
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CUrlFileDlg)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-	HICON m_hIcon;
-
-	// Generated message map functions
-	//{{AFX_MSG(CUrlFileDlg)
-	virtual BOOL OnInitDialog();
-	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
-	afx_msg void OnPaint();
-	afx_msg HCURSOR OnQueryDragIcon();
-	afx_msg LRESULT OnEndDownload(WPARAM, LPARAM);
-	afx_msg LRESULT OnDisplayStatus(WPARAM, LPARAM lParam);
-	afx_msg void OnMaxtextProgress();
-	virtual void OnOK();
-	virtual void OnCancel();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-
 private:
+	static INT_PTR CALLBACK DlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+	INT_PTR OnInitDialog(HWND hWnd);
+	INT_PTR OnCommand(HWND hWnd, int id, int event, HWND hCtl);
+	static DWORD WINAPI DownloadThread(LPVOID pParam);
+
+	void ChangeUIDownloading(bool bDownloading = true);
+	void OnEndDownload(WPARAM wParam);
+	void OnDisplayStatus(LPARAM lParam);
+
 	struct DOWNLOADPARAM
 	{
 		HWND hWnd;
 		HANDLE hEventStop;
-		CString strURL;
-		CString strFileName;
+		std::wstring strURL;
+		std::wstring strFileName;
 	};
 
-	CWinThread *m_pDownloadThread;
-	DOWNLOADPARAM m_downloadParam;
-	CEvent m_eventStop;
-	
-	void ChangeUIDownloading(bool bDownloading = true);
-	static UINT Download(LPVOID pParam);
-public:
-	CProgressCtrl m_progressPercent;
-	CEdit m_bytesLoad;
-};
-
-/////////////////////////////////////////////////////////////////////////////
-// CBSCallbackImpl
-
-class CBSCallbackImpl : public IBindStatusCallback
-{
-public:
-	CBSCallbackImpl(HWND hWnd, HANDLE hEventStop);
-
-	// IUnknown methods
-	STDMETHOD(QueryInterface)(REFIID riid, void **ppvObject);
-	STDMETHOD_(ULONG, AddRef)();
-	STDMETHOD_(ULONG, Release)();
-
-	// IBindStatusCallback methods
-	STDMETHOD(OnStartBinding)(DWORD, IBinding *);
-	STDMETHOD(GetPriority)(LONG *);
-	STDMETHOD(OnLowResource)(DWORD);
-	STDMETHOD(OnProgress)(ULONG ulProgress,
-						  ULONG ulProgressMax,
-						  ULONG ulStatusCode,
-						  LPCWSTR szStatusText);
-	STDMETHOD(OnStopBinding)(HRESULT, LPCWSTR);
-	STDMETHOD(GetBindInfo)(DWORD *, BINDINFO *);
-	STDMETHOD(OnDataAvailable)(DWORD, DWORD, FORMATETC *, STGMEDIUM *);
-	STDMETHOD(OnObjectAvailable)(REFIID, IUnknown *);
-
-protected:
-	ULONG m_ulObjRefCount;
-
-private:
 	HWND m_hWnd;
+	std::wstring m_strURL;
+	std::wstring m_selFile;
+	bool goodLoad;
+	HANDLE m_hDownloadThread;
 	HANDLE m_hEventStop;
+	DOWNLOADPARAM m_downloadParam;
+	HWND m_hProgress;
+	HWND m_hBytesLoad;
 };
-
-//{{AFX_INSERT_LOCATION}}

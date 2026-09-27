@@ -1,87 +1,57 @@
-// CPCBTESTDlg.h : header file
+// CPCBTESTDlg.h : settings dialog, pure Win32
 //
 
-#if !defined(AFX_CPCBTESTDLG_H__673E7EF4_4211_4178_900D_0D6F7CA9CE94__INCLUDED_)
-#define AFX_CPCBTESTDLG_H__673E7EF4_4211_4178_900D_0D6F7CA9CE94__INCLUDED_
-
-#if _MSC_VER > 1000
-#pragma once
-#endif // _MSC_VER > 1000
-
-/////////////////////////////////////////////////////////////////////////////
-// CCPCBTESTDlg dialog
+#if !defined(CPCBTESTDLG_H__673E7EF4_4211_4178_900D_0D6F7CA9CE94__INCLUDED_)
+#define CPCBTESTDLG_H__673E7EF4_4211_4178_900D_0D6F7CA9CE94__INCLUDED_
 
 #include "ColorPickerCB.h"
-#include "afxwin.h"
 #include "Wave.h"
 
-class CCPCBTESTDlg : public CDialog
+class CCPCBTESTDlg
 {
-// Construction
 public:
-	CCPCBTESTDlg(CWnd* pParent = NULL);	// standard constructor
+	CCPCBTESTDlg();
+	INT_PTR DoModal(HWND hWndParent);
+	virtual ~CCPCBTESTDlg();
 
-// Dialog Data
-	//{{AFX_DATA(CCPCBTESTDlg)
-	enum { IDD = IDD_CPCBTEST_DIALOG };
-	CColorPickerCB	m_cbOutBack;
-	CColorPickerCB	m_cbInBack;
-	CColorPickerCB	m_cbInFont;
-	CColorPickerCB	m_cbOutFont;
-	int m_valueEdit;
-	CFont m_font;
-	//}}AFX_DATA
-
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CCPCBTESTDlg)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-	HICON m_hIcon;
-	void UpdateFontSize(int fontH);
+private:
+	static INT_PTR CALLBACK DlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+	INT_PTR OnInitDialog(HWND hWnd);
+	INT_PTR OnCommand(HWND hWnd, int id, int event, HWND hCtl);
+	INT_PTR OnDrawItem(HWND hWnd, UINT id, LPDRAWITEMSTRUCT lpDIS);
+	void UpdateFontSize(HWND hWnd, int fontH);
 	void UpdateTempWave();
+	void ApplySettings(HWND hWnd);
+	void OnPaint(HWND hWnd);
 
-	// Generated message map functions
-	//{{AFX_MSG(CCPCBTESTDlg)
-	virtual BOOL OnInitDialog();
-	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
-	afx_msg void OnPaint();
-	afx_msg HCURSOR OnQueryDragIcon();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-public:
-	afx_msg void OnBnClickedOk();
-	CEdit m_editFontHeight;
-	CStatic m_textExampleOut;
-	CStatic m_textExampleIn;
-	afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
-	afx_msg void OnEnChangeEditSizeFont();
-	afx_msg void OnCbnSelchangeFocusedcb();
-	afx_msg void OnCbnSelchangeInactivecb();
-	afx_msg void OnCbnSelchangeDisabledcb();
-	afx_msg void OnCbnSelchangeDroppedcb();
-	//afx_msg void OnDeltaposSpin2(NMHDR *pNMHDR, LRESULT *pResult);
-	afx_msg void OnDestroy();
-	CButton m_CheckAutosay;
-	CButton m_CheckSetFocusToOut;
-	CComboBox m_ComboFontSize;
-	afx_msg void OnCbnSelchangeComboFontSize();
-	CButton mCheckAutoLog;
-	CButton mCheckSoundList;
-	CComboBox m_ComboStyleAnnounce;
-	afx_msg void OnCbnSelchangeComboStyleAnnounce();
-
+	HWND m_hComboOutBack;
+	HWND m_hComboInBack;
+	HWND m_hComboInFont;
+	HWND m_hComboOutFont;
+	CColorPickerCB m_cbOutBack;
+	CColorPickerCB m_cbInBack;
+	CColorPickerCB m_cbInFont;
+	CColorPickerCB m_cbOutFont;
+	COLORREF m_colorOutBack;
+	COLORREF m_colorInBack;
+	COLORREF m_colorInFont;
+	COLORREF m_colorOutFont;
+	HFONT m_font;
+	HWND m_hTextExampleOut;
+	HWND m_hTextExampleIn;
+	HWND m_hComboFontSize;
+	HWND m_hCheckAutosay;
+	HWND m_hCheckSetFocusToOut;
+	HWND m_hCheckAutoLog;
+	HWND m_hComboStyleAnnounce;
 	int m_currWaveStyle;
 	Wave* temp_scene_wave;
 	Wave* temp_inv_wave;
 	Wave* temp_ways_wave;
-	afx_msg void OnBnClickedButtonCheckAnnounce();
+	int m_valueEdit;
+	HBRUSH m_hBrushOut;
+	HBRUSH m_hBrushIn;
+	HICON m_hIcon;
 };
 
-//{{AFX_INSERT_LOCATION}}
-// Microsoft Visual C++ will insert additional declarations immediately before the previous line.
-
-#endif // !defined(AFX_CPCBTESTDLG_H__673E7EF4_4211_4178_900D_0D6F7CA9CE94__INCLUDED_)
+#endif // !defined(CPCBTESTDLG_H__673E7EF4_4211_4178_900D_0D6F7CA9CE94__INCLUDED_)
