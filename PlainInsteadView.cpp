@@ -109,7 +109,7 @@ LRESULT CALLBACK CPlainInsteadView::ViewWndProc(HWND hWnd, UINT message, WPARAM 
 		HINSTANCE hInst = GetModuleHandleW(NULL);
 		// multiline output edit
 		m_curView->m_hOutEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-			WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_LEFT | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_TABSTOP,
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_LEFT | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
 			0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_EDIT_OUT, hInst, NULL);
 		// three lists: scene, inventory, ways
 		m_curView->m_hListScene = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
@@ -198,6 +198,10 @@ void CPlainInsteadView::OnInitialUpdate()
 
 	CIniFile mainSettings;
 	useClipboard = mainSettings.GetInt(L"main", L"useClipboard", 0) != 0;
+
+	// initial focus goes to the output edit so screen readers announce the help text
+	if (m_hOutEdit && IsWindow(m_hOutEdit))
+		SetFocus(m_hOutEdit);
 }
 
 void CPlainInsteadView::OnSize(int cx, int cy)
@@ -215,9 +219,10 @@ void CPlainInsteadView::OnSize(int cx, int cy)
 }
 
 void CPlainInsteadView::OnMainSetFocus()
-{
-	// give focus to the view
-	SetFocus(m_hWndView);
+{		// focus the output edit, not the empty container
+		// (the container has no accessible name and screen readers announce it as "Pane")
+		if (m_hOutEdit && IsWindow(m_hOutEdit))
+			SetFocus(m_hOutEdit);
 }
 
 bool CPlainInsteadView::HandleCommand(HWND hWnd, WPARAM wParam, LPARAM lParam)
@@ -738,9 +743,11 @@ void CPlainInsteadView::UpdateFocusLogic()
 		else SetFocus(m_hOutEdit);
 	}
 
-	if (cntScene == 0) EnableWindow(m_hListScene, FALSE);
-	if (cntInv == 0) EnableWindow(m_hListInv, FALSE);
-	if (cntWays == 0) EnableWindow(m_hListWays, FALSE);
+	// never disable the lists: disabled controls are invisible to screen readers
+	// and are skipped by Tab navigation (NVDA must be able to reach and announce them)
+	EnableWindow(m_hListScene, TRUE);
+	EnableWindow(m_hListInv, TRUE);
+	EnableWindow(m_hListWays, TRUE);
 }
 
 void CPlainInsteadView::UpdateSettings()

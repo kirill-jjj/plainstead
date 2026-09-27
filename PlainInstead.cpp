@@ -927,17 +927,24 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	MSG msg;
 	while (GetMessageW(&msg, NULL, 0, 0))
 	{
-		if (hAccelTable && TranslateAcceleratorW(msg.hwnd, hAccelTable, &msg))
+		// accelerators must be translated against the MAIN window (owner of the menu),
+		// not msg.hwnd: child controls cannot dispatch menu commands
+		if (hAccelTable && TranslateAcceleratorW(hWnd, hAccelTable, &msg))
 			continue;
-		// keyboard pre-processing: Enter in the game lists (restored from MFC PreTranslateMessage)
-		if (CPlainInsteadView::GetCurrentView() &&
-			CPlainInsteadView::GetCurrentView()->PreTranslateMessage(&msg))
-			continue;
-		// Tab navigation between the view controls (NVDA/screen readers rely on it)
-		if (CPlainInsteadView::GetCurrentView() &&
-			msg.hwnd && IsChild(CPlainInsteadView::GetCurrentView()->GetHwndView(), msg.hwnd) &&
-			IsDialogMessageW(CPlainInsteadView::GetCurrentView()->GetHwndView(), &msg))
-			continue;
+		if (CPlainInsteadView::GetCurrentView())
+		{
+			HWND hView = CPlainInsteadView::GetCurrentView()->GetHwndView();
+			// keyboard pre-processing: Enter in the game lists (restored from MFC PreTranslateMessage)
+			if (CPlainInsteadView::GetCurrentView()->PreTranslateMessage(&msg))
+				continue;
+			// Tab navigation between the view controls; also when the focus
+			// is on the container itself (IsChild(x, x) is FALSE by design)
+			if (hView && msg.hwnd && (msg.hwnd == hView || IsChild(hView, msg.hwnd)))
+			{
+				if (IsDialogMessageW(hView, &msg))
+					continue;
+			}
+		}
 		TranslateMessage(&msg);
 		DispatchMessageW(&msg);
 	}
