@@ -31,6 +31,15 @@ static LRESULT CALLBACK LauncherListSubclassProc(HWND hWnd, UINT message, WPARAM
 	UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
 {
 	LauncherDialog* dlg = (LauncherDialog*)dwRefData;
+	if (message == WM_GETDLGCODE)
+	{
+		// the modal dialog would route ENTER to the default button; let it
+		// reach the list instead so the VK_RETURN handler below can act
+		MSG* pMsg = (MSG*)lParam;
+		if (pMsg && pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_RETURN
+			&& ListView_GetSelectedCount(hWnd) > 0)
+			return DLGC_WANTMESSAGE;
+	}
 	if (message == WM_KEYDOWN)
 	{
 		int tab = (int)SendMessageW(dlg->m_hTab, TCM_GETCURSEL, 0, 0);
@@ -297,6 +306,23 @@ INT_PTR LauncherDialog::OnInitDialog(HWND hWnd)
 	SendMessageW(m_hComboFiler, CB_SETCURSEL, m_lastSelFilter, 0);
 
 	showInstalledTabControls();
+
+	// restore the built-in game sources if settings.ini has none
+	// (first run or after a settings reset; nothing else writes them)
+	std::wstring repo1Url;
+	mainSettings.GetString(L"Repos", L"repo1", repo1Url, L"");
+	if (repo1Url.empty())
+	{
+		mainSettings.WriteString(L"Repos", L"repo1", L"https://www.instead-games.ru/xml.php");
+		mainSettings.WriteString(L"Repos", L"repo2", L"https://www.instead-games.ru/xml2.php");
+	}
+	std::wstring rss1Url;
+	mainSettings.GetString(L"Rss", L"rss1", rss1Url, L"");
+	if (rss1Url.empty())
+	{
+		mainSettings.WriteString(L"Rss", L"rss1", L"https://www.instead-games.ru/rss.php");
+		mainSettings.WriteString(L"Rss", L"rss2", L"https://www.instead-games.ru/rss.php?approved=0");
+	}
 
 	// set the list control styles
 	ListView_SetExtendedListViewStyle(m_hListInstalled, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
