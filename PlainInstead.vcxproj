@@ -123,6 +123,7 @@
     <ClCompile Include="InterpreterController.cpp" />
     <ClCompile Include="LauncherDialog.cpp" />
     <ClCompile Include="Markup.cpp" />
+    <ClCompile Include="pugixml.cpp" />
     <ClCompile Include="MultiSpeech.cpp" />
     <ClCompile Include="PlainInstead.cpp" />
     <ClCompile Include="PlainInsteadView.cpp" />
@@ -138,6 +139,7 @@
     <ClCompile Include="tiny_instead\libgen.cpp" />
     <ClCompile Include="tiny_instead\tiny_sound.c" />
     <ClCompile Include="unzip.cpp" />
+    <ClCompile Include="miniz.c" />
     <ClCompile Include="urlfileDlg.cpp" />
     <ClCompile Include="Wave.cpp" />
   </ItemGroup>
@@ -149,6 +151,7 @@
     <ClInclude Include="InterpreterController.h" />
     <ClInclude Include="LauncherDialog.h" />
     <ClInclude Include="Markup.h" />
+    <ClInclude Include="pugixml.hpp" />
     <ClInclude Include="MultiSpeech.h" />
     <ClInclude Include="PlainInstead.h" />
     <ClInclude Include="PlainInsteadView.h" />
