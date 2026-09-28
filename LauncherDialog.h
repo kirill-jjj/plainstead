@@ -1,21 +1,18 @@
 #pragma once
 #include "stdafx.h"
 
-// Launcher dialog (pure Win32)
+// game launcher dialog (pure Win32, canonical DialogBoxParamW)
 class LauncherDialog
 {
 public:
 	LauncherDialog(HWND hWndParent = NULL);
 	virtual ~LauncherDialog();
 	INT_PTR DoModal(HWND hWndParent);
-	void EndModal(HWND hWnd, INT_PTR code); // close the modal loop (works with the modeless dialog)
 	bool isWantStartGame();
 	std::wstring getStartGamePath();
 	std::wstring getStartGameTitle();
 
 protected:
-	void showInstalledTabControls();
-	void showNewTabControls();
 	void CreateColumns();
 	void RescanInstalled();
 	void AddInstalledGame(const std::wstring& name, const std::wstring& version, const std::pair<std::wstring, std::wstring>& path);
@@ -52,22 +49,26 @@ private:
 	INT_PTR OnInitDialog(HWND hWnd);
 	INT_PTR OnCommand(HWND hWnd, int id, int event, HWND hCtl);
 	INT_PTR OnNotify(HWND hWnd, NMHDR* pNMHDR);
-	BOOL PreTranslateMessage(MSG* pMsg, HWND hWnd);
-	void OnOK();
+	// list subclass procedure needs the control handles
+public:
+	HWND m_hTab;
+	HWND m_hListInstalled;
+	HWND m_hListNew;
+	// commands invoked from the list subclass procedure (LauncherListSubclassProc)
 	void OnBnClickedBtnDelGame();
 	void OnBnClickedBtnUpdate();
 	void OnBnClickedBtnOpenLink();
 	void OnBnClickedBtnInstall();
 	void OnBnClickedBtnPlayGamem();
 	void OnBnClickedBtnResumeoldGame2();
+	void showInstalledTabControls();
+	void showNewTabControls();
+private:
 	void OnCbnSelchangeComboFilter();
 	void OnHdnItemclickListInstalled(NMHDR* pNMHDR);
 	void OnTabSelChange();
 
 	HWND m_hWnd;
-	HWND m_hTab;
-	HWND m_hListInstalled;
-	HWND m_hListNew;
 	HWND m_hBtnDelete;
 	HWND m_hBtnUpdate;
 	HWND m_hBtnInstall;
@@ -75,6 +76,4 @@ private:
 	HWND m_hBtnPlayGame;
 	HWND m_hBtnResumeGame;
 	HWND m_hComboFiler;
-	bool m_running;   // modal loop flag (modeless dialog running as modal)
-	INT_PTR m_endCode;
 };

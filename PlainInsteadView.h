@@ -8,6 +8,9 @@
 #define ID_TIMER_1 100
 #define ID_TIMER_2 101
 
+// message sent by the common Find dialog (registered at startup)
+extern UINT WM_FINDREPLACE;
+
 class CPlainInsteadView
 {
 public:
@@ -18,18 +21,21 @@ public:
 	static void CreateView(HWND hWndMain); // create child controls inside the main window
 
 	HWND GetHwndMain() const { return m_hWndMain; }
-	HWND GetHwndView() const { return m_hWndView; }
 	HWND GetHwndOut() const { return m_hOutEdit; }
 
-	// Enter in one of the game lists: run the selected action (was PreTranslateMessage in MFC)
+	// Enter in one of the game lists: run the selected action; called from the list subclass procedure
 	bool OnListEnter();
-	// keyboard pre-processing for the main loop (Tab navigation, Enter in lists)
-	bool PreTranslateMessage(MSG* pMsg);
+	// install the subclass procedures on the game lists (called once after creation)
+	void InstallSubclasses();
 
 	void OnSize(int cx, int cy);
 	void OnMainSetFocus();
 	// returns TRUE if the WM_COMMAND notification was handled (control notification)
 	bool HandleCommand(HWND hWnd, WPARAM wParam, LPARAM lParam);
+	// WM_FINDREPLACE notification from the common Find dialog (registered message)
+	LRESULT OnFindReplaceMessage(LPARAM lParam);
+	// colors for the output edit (called from the main WndProc on WM_CTLCOLOREDIT)
+	void OnCtlColor(HWND hWndChild, HDC hDC, UINT nCtlColor);
 
 	void SetOutputText(const std::wstring& newText, BOOL useHistory = TRUE);
 	void UpdateSettings();
@@ -39,12 +45,10 @@ public:
 	void TurnOffLogging();
 
 private:
-	static LRESULT CALLBACK ViewWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-	LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
+	void CreateControls();
 	void OnInitialUpdate();
 	void ShowTextFromResource(LPCWSTR res_id); // show text from a resource
 	void UpdateFontSize();
-	void OnCtlColor(HWND hWndChild, HDC hDC, UINT nCtlColor);
 	void OnFindText();
 	void OnFindNext();
 	bool FindStringInEdit(std::wstring FindName, bool bMatchCase);
@@ -64,8 +68,7 @@ private:
 	void OnMenuLog();
 	void OnMenuAddComment();
 
-	HWND m_hWndMain;    // the top-level frame window
-	HWND m_hWndView;    // the view container window
+	HWND m_hWndMain;    // the top-level frame window (owns the controls directly)
 	HWND m_hOutEdit;    // multiline output edit
 	HWND m_hListScene;  // scene objects list
 	HWND m_hListInv;    // inventory list

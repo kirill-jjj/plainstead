@@ -14,10 +14,85 @@
 #include "IniFile.h"
 
 #pragma comment(lib, "wininet.lib")
+#pragma comment(lib, "comctl32.lib")
 
 // page ids
 #define ID_PAGE_INSTALLED 0 //installed games
 #define ID_PAGE_NEW       1 //new (to download)
+
+// keyboard handling for the launcher lists (ENTER/DEL/V/F3),
+// implemented as proper subclassing instead of an MFC-style PreTranslateMessage
+struct LauncherListData
+{
+	LauncherDialog* dlg;
+};
+
+static LRESULT CALLBACK LauncherListSubclassProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
+	UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+	LauncherDialog* dlg = (LauncherDialog*)dwRefData;
+	if (message == WM_KEYDOWN)
+	{
+		int tab = (int)SendMessageW(dlg->m_hTab, TCM_GETCURSEL, 0, 0);
+		bool hasSelection = ListView_GetSelectedCount(hWnd) > 0;
+		switch (wParam)
+		{
+		case VK_RETURN:
+			if (hasSelection)
+			{
+				if (hWnd == dlg->m_hListInstalled) dlg->OnBnClickedBtnPlayGamem();
+				else if (hWnd == dlg->m_hListNew) dlg->OnBnClickedBtnInstall();
+				return 0;
+			}
+			break;
+		case VK_DELETE:
+			if (hWnd == dlg->m_hListInstalled && tab == ID_PAGE_INSTALLED && hasSelection)
+			{
+				dlg->OnBnClickedBtnDelGame();
+				return 0;
+			}
+			break;
+		case L'V':
+			if (hWnd == dlg->m_hListNew && tab == ID_PAGE_NEW && hasSelection && GetKeyState(VK_CONTROL) >= 0)
+			{
+				dlg->OnBnClickedBtnOpenLink();
+				return 0;
+			}
+			break;
+		case VK_F3:
+			if (hWnd == dlg->m_hListInstalled && tab == ID_PAGE_INSTALLED)
+			{
+				dlg->OnBnClickedBtnResumeoldGame2();
+				return 0;
+			}
+			break;
+		case VK_F5:
+			if (tab == ID_PAGE_NEW)
+			{
+				dlg->OnBnClickedBtnUpdate();
+				return 0;
+			}
+			break;
+		case L'1':
+			if (GetKeyState(VK_CONTROL) < 0 && tab == ID_PAGE_NEW)
+			{
+				SendMessageW(dlg->m_hTab, TCM_SETCURSEL, ID_PAGE_INSTALLED, 0);
+				dlg->showInstalledTabControls();
+				return 0;
+			}
+			break;
+		case L'2':
+			if (GetKeyState(VK_CONTROL) < 0 && tab == ID_PAGE_INSTALLED)
+			{
+				SendMessageW(dlg->m_hTab, TCM_SETCURSEL, ID_PAGE_NEW, 0);
+				dlg->showNewTabControls();
+				return 0;
+			}
+			break;
+		}
+	}
+	return DefSubclassProc(hWnd, message, wParam, lParam);
+}
 // filter ids
 #define SEL_FILTER_ALL           0 //all games
 #define SEL_FILTER_VALID         1 //accessible
@@ -59,17 +134,6 @@ LauncherDialog::LauncherDialog(HWND hWndParent)
 	m_sortNewUp = true;
 	m_sortInstalledLastItem = -1;
 	m_sortNewLastItem = -1;
-	m_running = false;
-	m_endCode = IDCANCEL;
-}
-
-// close the modal loop; hWnd may be the dialog or NULL
-void LauncherDialog::EndModal(HWND hWnd, INT_PTR code)
-{
-	m_endCode = code;
-	m_running = false;
-	if (hWnd && IsWindow(hWnd))
-		DestroyWindow(hWnd);
 }
 
 LauncherDialog::~LauncherDialog()
@@ -78,34 +142,8 @@ LauncherDialog::~LauncherDialog()
 
 INT_PTR LauncherDialog::DoModal(HWND hWndParent)
 {
-	// dialog message loop with PreTranslateMessage support
-	// (DialogBoxParamW alone has no hook for keyboard shortcuts)
-	m_hWnd = hWndParent; // may be overwritten in OnInitDialog
-	HINSTANCE hInst = GetModuleHandleW(NULL);
-	HWND hDlg = CreateDialogParamW(hInst, MAKEINTRESOURCEW(IDD_LAUNCHERDIALOG), hWndParent, DlgProc, (LPARAM)this);
-	if (!hDlg)
-		return -1;
-	ShowWindow(hDlg, SW_SHOW);
-	EnableWindow(hWndParent, FALSE);
-	MSG msg;
-	INT_PTR result = IDCANCEL;
-	m_running = true;
-	while (m_running && GetMessageW(&msg, NULL, 0, 0))
-	{
-		if (PreTranslateMessage(&msg, hDlg))
-			continue;
-		if (!IsDialogMessageW(hDlg, &msg))
-		{
-			TranslateMessage(&msg);
-			DispatchMessageW(&msg);
-		}
-		if (!IsWindow(hDlg))
-			break;
-	}
-	result = m_endCode;
-	EnableWindow(hWndParent, TRUE);
-	SetFocus(hWndParent);
-	return result;
+	// canonical modal dialog: Windows runs the message loop and disables the owner
+	return DialogBoxParamW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDD_LAUNCHERDIALOG), hWndParent, DlgProc, (LPARAM)this);
 }
 
 INT_PTR LauncherDialog::DlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -127,7 +165,7 @@ INT_PTR LauncherDialog::DlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 		if (pThis) return pThis->OnNotify(hWnd, (NMHDR*)lParam);
 		break;
 	case WM_CLOSE:
-		if (pThis) pThis->EndModal(hWnd, IDCANCEL);
+		EndDialog(hWnd, IDCANCEL);
 		return TRUE;
 	}
 	return FALSE;
@@ -228,6 +266,10 @@ INT_PTR LauncherDialog::OnInitDialog(HWND hWnd)
 	m_hBtnResumeGame = GetDlgItem(hWnd, IDC_BTN_RESUMEOLD_GAME2);
 	m_hComboFiler = GetDlgItem(hWnd, IDC_COMBO_FILTER);
 
+	// subclass the game lists so they handle their own keys (ENTER/DEL/V/F3)
+	SetWindowSubclass(m_hListInstalled, LauncherListSubclassProc, 1, (DWORD_PTR)this);
+	SetWindowSubclass(m_hListNew, LauncherListSubclassProc, 2, (DWORD_PTR)this);
+
 	TCHAR currDirBuf[MAX_PATH];
 	GetCurrentDirectoryW(MAX_PATH, currDirBuf);
 	currDir = currDirBuf;
@@ -312,12 +354,12 @@ void LauncherDialog::RescanInstalled()
 		bool have_file = false;
 		if (PathFileExistsW((filePathsAndNames[i].first + L"\\main.lua").c_str()))
 		{
-			if (gameFile.Open((filePathsAndNames[i].first + L"\\main.lua").c_str(), CFile::modeRead))
+			if (gameFile.Open((filePathsAndNames[i].first + L"\\main.lua").c_str(), OpenFlags::read))
 				have_file = true;
 		}
 		else if (PathFileExistsW((filePathsAndNames[i].first + L"\\main3.lua").c_str()))
 		{
-			if (gameFile.Open((filePathsAndNames[i].first + L"\\main3.lua").c_str(), CFile::modeRead))
+			if (gameFile.Open((filePathsAndNames[i].first + L"\\main3.lua").c_str(), OpenFlags::read))
 				have_file = true;
 		}
 
@@ -599,71 +641,6 @@ void LauncherDialog::SetCell(HWND hList, const std::wstring& value, int nRow, in
 		ListView_SetItem(hList, &lvItem);
 }
 
-void LauncherDialog::OnOK()
-{
-	// nothing: the dialog is closed by starting a game or cancel
-}
-
-BOOL LauncherDialog::PreTranslateMessage(MSG* pMsg, HWND hWnd)
-{
-	// keyboard shortcuts (formerly handled in the MFC PreTranslateMessage)
-	if (pMsg->message == WM_KEYDOWN)
-	{
-		int tab = (int)SendMessageW(m_hTab, TCM_GETCURSEL, 0, 0);
-		if (pMsg->wParam == VK_DELETE && tab == ID_PAGE_INSTALLED &&
-			GetFocus() == m_hListInstalled &&
-			ListView_GetSelectedCount(m_hListInstalled) > 0)
-		{
-			OnBnClickedBtnDelGame();
-			return TRUE;
-		}
-		else if (pMsg->wParam == VK_F5 && tab == ID_PAGE_NEW)
-		{
-			OnBnClickedBtnUpdate();
-			return TRUE;
-		}
-		else if (pMsg->wParam == L'V' && tab == ID_PAGE_NEW &&
-			GetFocus() == m_hListNew &&
-			ListView_GetSelectedCount(m_hListNew) > 0)
-		{
-			OnBnClickedBtnOpenLink();
-			return TRUE;
-		}
-		else if (pMsg->wParam == VK_RETURN && tab == ID_PAGE_NEW &&
-			GetFocus() == m_hListNew &&
-			ListView_GetSelectedCount(m_hListNew) > 0)
-		{
-			OnBnClickedBtnInstall();
-			return TRUE;
-		}
-		else if (pMsg->wParam == VK_RETURN && tab == ID_PAGE_INSTALLED &&
-			GetFocus() == m_hListInstalled &&
-			ListView_GetSelectedCount(m_hListInstalled) > 0)
-		{
-			OnBnClickedBtnPlayGamem();
-			return TRUE;
-		}
-		else if (pMsg->wParam == VK_F3 && tab == ID_PAGE_INSTALLED)
-		{
-			OnBnClickedBtnResumeoldGame2();
-			return TRUE;
-		}
-		else if ((::GetKeyState(VK_CONTROL) < 0) && pMsg->wParam == L'2' && tab == ID_PAGE_INSTALLED)
-		{
-			SendMessageW(m_hTab, TCM_SETCURSEL, ID_PAGE_NEW, 0);
-			showNewTabControls();
-			return TRUE;
-		}
-		else if ((::GetKeyState(VK_CONTROL) < 0) && pMsg->wParam == L'1' && tab == ID_PAGE_NEW)
-		{
-			SendMessageW(m_hTab, TCM_SETCURSEL, ID_PAGE_INSTALLED, 0);
-			showInstalledTabControls();
-			return TRUE;
-		}
-	}
-	return FALSE;
-}
-
 static int DeleteDirectory(const std::wstring &refcstrRootDirectory,
 	bool bDeleteSubdirectories = true)
 {
@@ -875,7 +852,7 @@ void LauncherDialog::ReadNewGamesFromXMLAndAdd(const std::wstring& temp_xmlfile)
 {
 	// read the xml into memory
 	CStdioFileEx gameFile;
-	if (!gameFile.Open(temp_xmlfile.c_str(), CFile::modeRead))
+	if (!gameFile.Open(temp_xmlfile.c_str(), OpenFlags::read))
 		return;
 	gameFile.SetCodePage(CP_UTF8);
 	std::wstring xmlDoc;
@@ -970,7 +947,7 @@ void LauncherDialog::ReadAdditionalInfoFromXMLRss(const std::wstring& temp_xmlfi
 {
 	// read the xml into memory
 	CStdioFileEx gameFile;
-	if (!gameFile.Open(temp_xmlfile.c_str(), CFile::modeRead))
+	if (!gameFile.Open(temp_xmlfile.c_str(), OpenFlags::read))
 		return;
 	gameFile.SetCodePage(CP_UTF8);
 	std::wstring xmlDoc;
@@ -1065,7 +1042,7 @@ void LauncherDialog::OnBnClickedBtnInstall()
 			m_wantPlay = true;
 			m_stGamePath = m_gameBaseDir + L"\\" + gameName;
 			m_stGameTitle = gameTitle;
-			EndModal(m_hWnd, -1);
+			EndDialog(m_hWnd, -1);
 		}
 		return;
 	}
@@ -1095,7 +1072,7 @@ void LauncherDialog::OnBnClickedBtnPlayGamem()
 	ListView_GetItemText(m_hListInstalled, sel, N_SUBITEM_LIST_INSTALLED_CAPTION, gameTitle, 256);
 	m_stGameTitle = gameTitle;
 
-	EndModal(m_hWnd, -1);
+	EndDialog(m_hWnd, -1);
 }
 
 bool LauncherDialog::isWantStartGame()
@@ -1124,7 +1101,7 @@ void LauncherDialog::OnBnClickedBtnResumeoldGame2()
 	m_stGamePath = file;
 	m_stGameTitle = name;
 
-	EndModal(m_hWnd, -1);
+	EndDialog(m_hWnd, -1);
 }
 
 void LauncherDialog::OnCbnSelchangeComboFilter()
@@ -1228,7 +1205,7 @@ INT_PTR LauncherDialog::OnCommand(HWND hWnd, int id, int event, HWND hCtl)
 		}
 		return TRUE;
 	case IDCANCEL:
-		EndModal(hWnd, IDCANCEL);
+		EndDialog(hWnd, IDCANCEL);
 		return TRUE;
 	}
 	return FALSE;

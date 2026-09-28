@@ -40,17 +40,17 @@ BOOL CStdioFileEx::Open(LPCTSTR lpszFileName, UINT nOpenFlags)
 
 	m_nOpenFlags = nOpenFlags;
 	// strip the text flag, stdio handles newlines itself
-	UINT flags = nOpenFlags & ~CFile::typeText;
-	flags |= CFile::typeBinary;
+	UINT flags = nOpenFlags & ~OpenFlags::text;
+	flags |= OpenFlags::binary;
 
 	TCHAR mode[8];
-	if (flags & CFile::modeCreate)
-		wcscpy_s(mode, (flags & CFile::modeRead) ? L"w+b" : L"wb");
-	else if ((flags & (CFile::modeRead | CFile::modeWrite)) == (CFile::modeRead | CFile::modeWrite))
+	if (flags & OpenFlags::create)
+		wcscpy_s(mode, (flags & OpenFlags::read) ? L"w+b" : L"wb");
+	else if ((flags & (OpenFlags::read | OpenFlags::write)) == (OpenFlags::read | OpenFlags::write))
 		wcscpy_s(mode, L"r+b"); // read+write on an existing file: do NOT truncate
-	else if ((flags & CFile::modeWrite) && (flags & CFile::modeNoTruncate))
+	else if ((flags & OpenFlags::write) && (flags & OpenFlags::noTruncate))
 		wcscpy_s(mode, L"ab");
-	else if (flags & CFile::modeWrite)
+	else if (flags & OpenFlags::write)
 		wcscpy_s(mode, L"wb");
 	else
 		wcscpy_s(mode, L"rb");
@@ -60,7 +60,7 @@ BOOL CStdioFileEx::Open(LPCTSTR lpszFileName, UINT nOpenFlags)
 		return FALSE;
 
 	// detect a UTF-16 BOM when reading an existing file
-	if ((flags & CFile::modeRead) && !(flags & CFile::modeCreate))
+	if ((flags & OpenFlags::read) && !(flags & OpenFlags::create))
 	{
 		wint_t c1 = fgetc(m_pFile);
 		wint_t c2 = fgetc(m_pFile);

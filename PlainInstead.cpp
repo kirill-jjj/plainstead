@@ -688,6 +688,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		if (CPlainInsteadView::GetCurrentView())
 			CPlainInsteadView::GetCurrentView()->OnMainSetFocus();
 		return 0;
+	case WM_CTLCOLOREDIT:
+	case WM_CTLCOLORSTATIC:
+		if (CPlainInsteadView::GetCurrentView())
+		{
+			CPlainInsteadView::GetCurrentView()->OnCtlColor((HWND)lParam, (HDC)wParam,
+				message == WM_CTLCOLOREDIT ? CTLCOLOR_EDIT : CTLCOLOR_STATIC);
+			return (LRESULT)GetStockObject(WHITE_BRUSH);
+		}
+		break;
 	case WM_COMMAND:
 	{
 		// forward control notifications to the view
@@ -779,6 +788,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		PostQuitMessage(0);
 		return 0;
 	default:
+		// WM_FINDREPLACE is a RegisterWindowMessage value, not a constant:
+		// it must be handled outside the switch
+		if (message == WM_FINDREPLACE && CPlainInsteadView::GetCurrentView())
+			return CPlainInsteadView::GetCurrentView()->OnFindReplaceMessage(lParam);
 		return DefWindowProcW(hWnd, message, wParam, lParam);
 	}
 }
@@ -933,16 +946,20 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 			continue;
 		if (CPlainInsteadView::GetCurrentView())
 		{
-			HWND hView = CPlainInsteadView::GetCurrentView()->GetHwndView();
-			// keyboard pre-processing: Enter in the game lists (restored from MFC PreTranslateMessage)
-			if (CPlainInsteadView::GetCurrentView()->PreTranslateMessage(&msg))
-				continue;
-			// Tab navigation between the view controls; also when the focus
-			// is on the container itself (IsChild(x, x) is FALSE by design)
-			if (hView && msg.hwnd && (msg.hwnd == hView || IsChild(hView, msg.hwnd)))
+			HWND hMain = CPlainInsteadView::GetCurrentView()->GetHwndMain();
+			// Tab navigation among the controls owned by the main window;
+			// (Enter in the lists is handled by the list subclass procedures)
+			if (hMain && msg.hwnd && (msg.hwnd == hMain || IsChild(hMain, msg.hwnd)))
 			{
-				if (IsDialogMessageW(hView, &msg))
-					continue;
+				// IsDialogMessageW with the main window would eat Enter for the
+				// default button; only let it handle navigation keys
+				if ((msg.message == WM_KEYDOWN) &&
+					(msg.wParam == VK_TAB || msg.wParam == VK_UP || msg.wParam == VK_DOWN ||
+					 msg.wParam == VK_LEFT || msg.wParam == VK_RIGHT))
+				{
+					if (IsDialogMessageW(hMain, &msg))
+						continue;
+				}
 			}
 		}
 		TranslateMessage(&msg);

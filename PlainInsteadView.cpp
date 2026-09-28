@@ -17,7 +17,7 @@ extern "C" {
 }
 
 // message sent by the common Find dialog
-static UINT WM_FINDREPLACE = ::RegisterWindowMessageW(FINDMSGSTRING);
+UINT WM_FINDREPLACE = ::RegisterWindowMessageW(FINDMSGSTRING);
 
 CPlainInsteadView* CPlainInsteadView::m_curView = 0;
 
@@ -39,7 +39,6 @@ static std::wstring utf8_to_wide(const char* utf8Str)
 CPlainInsteadView::CPlainInsteadView()
 {
 	m_hWndMain = NULL;
-	m_hWndView = NULL;
 	m_hOutEdit = NULL;
 	m_hListScene = NULL;
 	m_hListInv = NULL;
@@ -72,100 +71,34 @@ CPlainInsteadView::~CPlainInsteadView()
 
 void CPlainInsteadView::CreateView(HWND hWndMain)
 {
-	static bool registered = false;
-	if (!registered)
-	{
-		WNDCLASSEXW wcex;
-		memset(&wcex, 0, sizeof(wcex));
-		wcex.cbSize = sizeof(WNDCLASSEXW);
-		wcex.style = CS_HREDRAW | CS_VREDRAW;
-		wcex.lpfnWndProc = ViewWndProc;
-		wcex.hInstance = GetModuleHandleW(NULL);
-		wcex.hCursor = LoadCursorW(NULL, IDC_ARROW);
-		wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-		wcex.lpszClassName = L"PlainInsteadViewClass";
-		RegisterClassExW(&wcex);
-		registered = true;
-	}
-
 	if (!m_curView)
 		m_curView = new CPlainInsteadView();
-
 	m_curView->m_hWndMain = hWndMain;
-	m_curView->m_hWndView = CreateWindowExW(WS_EX_CONTROLPARENT, L"PlainInsteadViewClass", L"",
-		WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_GROUP,
-		0, 0, 0, 0, hWndMain, NULL, GetModuleHandleW(NULL), NULL);
+	// the controls are created directly in the main window; no intermediate container
+	m_curView->CreateControls();
 }
 
-LRESULT CALLBACK CPlainInsteadView::ViewWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+void CPlainInsteadView::CreateControls()
 {
-	if (!m_curView)
-		return DefWindowProcW(hWnd, message, wParam, lParam);
-
-	switch (message)
-	{
-	case WM_CREATE:
-	{
-		HINSTANCE hInst = GetModuleHandleW(NULL);
-		// multiline output edit
-		m_curView->m_hOutEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-			WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_LEFT | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
-			0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_EDIT_OUT, hInst, NULL);
-		// three lists: scene, inventory, ways
-		m_curView->m_hListScene = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
-			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
-			0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_LIST_SCENE, hInst, NULL);
-		m_curView->m_hListInv = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
-			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
-			0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_LIST_INV, hInst, NULL);
-		m_curView->m_hListWays = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
-			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
-			0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_LIST_WAYS, hInst, NULL);
-		m_curView->OnInitialUpdate();
-		return 0;
-	}
-	case WM_SIZE:
-		m_curView->OnSize(LOWORD(lParam), HIWORD(lParam));
-		return 0;
-	case WM_CTLCOLORSTATIC:
-	case WM_CTLCOLOREDIT:
-		m_curView->OnCtlColor((HWND)lParam, (HDC)wParam, message == WM_CTLCOLOREDIT ? CTLCOLOR_EDIT : CTLCOLOR_STATIC);
-		return (LRESULT)GetStockObject(WHITE_BRUSH);
-	case WM_COMMAND:
-		if (m_curView->HandleCommand(hWnd, wParam, lParam))
-			return 0;
-		break;
-	}
-	// WM_FINDREPLACE is a RegisterWindowMessage value, not a constant: handle it outside the switch
-	if (message == WM_FINDREPLACE)
-	{
-		// common find dialog notification
-		LPFINDREPLACEW pfr = (LPFINDREPLACEW)lParam;
-		if (pfr->Flags & FR_DIALOGTERM)
-		{
-			m_curView->m_hFindDialog = NULL;
-			return 0;
-		}
-		if (pfr->Flags & FR_FINDNEXT)
-		{
-			std::wstring FindName = pfr->lpstrFindWhat ? pfr->lpstrFindWhat : L"";
-			bool bMatchCase = (pfr->Flags & FR_MATCHCASE) != 0;
-			if (m_curView->FindStringInEdit(FindName, bMatchCase))
-			{
-				m_curView->wasFind = true;
-				m_curView->lastSearchStr = FindName;
-				m_curView->lastMatchCase = bMatchCase;
-				// close the dialog after a successful search
-				if (m_curView->m_hFindDialog) { DestroyWindow(m_curView->m_hFindDialog); m_curView->m_hFindDialog = NULL; }
-			}
-			else
-			{
-				MessageBeep(MB_ICONSTOP);
-			}
-		}
-		return 0;
-	}
-	return DefWindowProcW(hWnd, message, wParam, lParam);
+	HINSTANCE hInst = GetModuleHandleW(NULL);
+	HWND hWnd = m_hWndMain;
+	// multiline output edit
+	m_hOutEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+		WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_LEFT | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+		0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_EDIT_OUT, hInst, NULL);
+	// three lists: scene, inventory, ways
+	m_hListScene = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+		WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
+		0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_LIST_SCENE, hInst, NULL);
+	m_hListInv = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+		WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
+		0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_LIST_INV, hInst, NULL);
+	m_hListWays = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+		WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
+		0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_LIST_WAYS, hInst, NULL);
+	// lists handle their own Enter key
+	InstallSubclasses();
+	OnInitialUpdate();
 }
 
 void CPlainInsteadView::OnCtlColor(HWND hWndChild, HDC hDC, UINT nCtlColor)
@@ -209,9 +142,6 @@ void CPlainInsteadView::OnSize(int cx, int cy)
 	int h_static = 30;
 	int sz_list = 200;
 	int h_list = (cy / 3 - h_static);
-	// the view container must fill the whole main window client area,
-	// otherwise its children are clipped to a zero-size parent
-	if (m_hWndView) SetWindowPos(m_hWndView, NULL, 0, 0, cx, cy, SWP_NOACTIVATE | SWP_NOZORDER);
 	if (m_hOutEdit) SetWindowPos(m_hOutEdit, NULL, 0, 0, cx - sz_list, cy, SWP_NOACTIVATE | SWP_NOZORDER);
 	if (m_hListScene) SetWindowPos(m_hListScene, NULL, 2 + cx - sz_list, h_static, sz_list, h_list, SWP_NOACTIVATE | SWP_NOZORDER);
 	if (m_hListInv)   SetWindowPos(m_hListInv, NULL, 2 + cx - sz_list, h_static + h_list + h_static, sz_list, h_list, SWP_NOACTIVATE | SWP_NOZORDER);
@@ -466,7 +396,7 @@ void CPlainInsteadView::TryInsteadCommand(const std::wstring& textIn, const std:
 	if (isLogOn)
 	{
 		CStdioFileEx flog;
-		if (!flog.Open(logFileName.c_str(), CFile::modeCreate | CFile::modeWrite | CFile::modeNoTruncate))
+		if (!flog.Open(logFileName.c_str(), OpenFlags::create | OpenFlags::write | OpenFlags::noTruncate))
 		{
 			MessageBoxW(m_hWndMain, L"Не удалось открыть файл лога! Отключаем логирование.", L"Ошибка", MB_OK | MB_ICONERROR);
 			TurnOffLogging();
@@ -683,28 +613,56 @@ bool CPlainInsteadView::OnListEnter()
 	return false;
 }
 
-// pre-processing in the main message loop (replaces the MFC PreTranslateMessage)
-bool CPlainInsteadView::PreTranslateMessage(MSG* pMsg)
+// WM_FINDREPLACE notification from the common Find dialog
+LRESULT CPlainInsteadView::OnFindReplaceMessage(LPARAM lParam)
 {
-	if (!pMsg || !m_curView) return false;
-	// Ctrl+C / Ctrl+A in the output edit
-	if (pMsg->message == WM_KEYDOWN && ::GetKeyState(VK_CONTROL) < 0 && GetFocus() == m_hOutEdit)
+	LPFINDREPLACEW pfr = (LPFINDREPLACEW)lParam;
+	if (pfr->Flags & FR_DIALOGTERM)
 	{
-		switch (pMsg->wParam)
+		m_hFindDialog = NULL;
+		return 0;
+	}
+	if (pfr->Flags & FR_FINDNEXT)
+	{
+		std::wstring FindName = pfr->lpstrFindWhat ? pfr->lpstrFindWhat : L"";
+		bool bMatchCase = (pfr->Flags & FR_MATCHCASE) != 0;
+		if (FindStringInEdit(FindName, bMatchCase))
 		{
-		case L'C': SendMessageW(m_hOutEdit, WM_COPY, 0, 0); return true;
-		case L'A': SendMessageW(m_hOutEdit, EM_SETSEL, 0, -1); return true;
+			wasFind = true;
+			lastSearchStr = FindName;
+			lastMatchCase = bMatchCase;
+			// close the dialog after a successful search
+			if (m_hFindDialog) { DestroyWindow(m_hFindDialog); m_hFindDialog = NULL; }
 		}
-		return false;
+		else
+		{
+			MessageBeep(MB_ICONSTOP);
+		}
 	}
-	// Enter in the game lists
-	if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_RETURN)
+	return 0;
+}
+
+// subclass procedure for the game lists: handles Enter in the list itself
+// (canonical SetWindowSubclass instead of an MFC-style PreTranslateMessage)
+static LRESULT CALLBACK GameListSubclassProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
+	UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+	CPlainInsteadView* view = (CPlainInsteadView*)dwRefData;
+	if (message == WM_KEYDOWN && wParam == VK_RETURN)
 	{
-		HWND focused = GetFocus();
-		if (focused == m_hListScene || focused == m_hListInv || focused == m_hListWays)
-			return OnListEnter();
+		if (view->OnListEnter())
+			return 0;
 	}
-	return false;
+	return DefSubclassProc(hWnd, message, wParam, lParam);
+}
+
+void CPlainInsteadView::InstallSubclasses()
+{
+	// subclass the game lists so they handle their own keys (Enter),
+	// with the view instance passed as reference data
+	SetWindowSubclass(m_hListScene, GameListSubclassProc, 1, (DWORD_PTR)this);
+	SetWindowSubclass(m_hListInv, GameListSubclassProc, 2, (DWORD_PTR)this);
+	SetWindowSubclass(m_hListWays, GameListSubclassProc, 3, (DWORD_PTR)this);
 }
 
 void CPlainInsteadView::InitFocusLogic()
@@ -910,7 +868,7 @@ void CPlainInsteadView::OnFindText()
 		FINDREPLACEW fr;
 		memset(&fr, 0, sizeof(fr));
 		fr.lStructSize = sizeof(fr);
-		fr.hwndOwner = m_hWndView;
+		fr.hwndOwner = m_hWndMain;
 		fr.lpstrFindWhat = szFindWhat;
 		fr.wFindWhatLen = 256;
 		fr.Flags = FR_DOWN | FR_HIDEUPDOWN | FR_HIDEWHOLEWORD;

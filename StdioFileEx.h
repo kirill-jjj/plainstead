@@ -1,8 +1,7 @@
 // StdioFileEx.h: a light stdio-based text file wrapper (pure Win32, no MFC).
 // Supports the subset of the old MFC CStdioFileEx API used by this project:
 //   Open / Close / ReadString / WriteString / SetCodePage / SeekToEnd / GetLength
-// Flags are compatible: CFile::modeRead / modeWrite / modeCreate / modeNoTruncate /
-//   typeBinary / typeText and CStdioFileEx::modeWriteUnicode.
+// Open mode flags are defined in the OpenFlags namespace below.
 //
 
 #pragma once
@@ -13,16 +12,16 @@
 #define CP_UTF8 65001
 #endif
 
-// CFile-compatible flag subset
-namespace CFile
+// open mode flags for CStdioFileEx::Open
+namespace OpenFlags
 {
-	const UINT modeRead = 0x00000001;
-	const UINT modeWrite = 0x00000002;
-	const UINT modeReadWrite = 0x00000003;
-	const UINT modeCreate = 0x00001000;
-	const UINT modeNoTruncate = 0x00008000;
-	const UINT typeBinary = 0x00010000;
-	const UINT typeText = 0x00020000;
+	const UINT read = 0x00000001;
+	const UINT write = 0x00000002;
+	const UINT readWrite = 0x00000003;
+	const UINT create = 0x00001000;
+	const UINT noTruncate = 0x00008000;
+	const UINT binary = 0x00010000;
+	const UINT text = 0x00020000;
 }
 
 class CStdioFileEx
