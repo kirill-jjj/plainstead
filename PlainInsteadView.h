@@ -17,8 +17,11 @@ public:
 	CPlainInsteadView();
 	~CPlainInsteadView();
 
-	static CPlainInsteadView* GetCurrentView();
-	static void CreateView(HWND hWndMain); // create child controls inside the main window
+	// create the controller and attach it to the main window (WM_CREATE);
+	// WndProc reads it back with GetWindowLongPtrW(hWnd, GWLP_USERDATA)
+	static void CreateView(HWND hWndMain);
+	// detach from the window and destroy the controller (WM_DESTROY)
+	void DestroyView();
 
 	HWND GetHwndMain() const { return m_hWndMain; }
 	HWND GetHwndOut() const { return m_hOutEdit; }
@@ -107,6 +110,4 @@ private:
 	Wave* wave_inv;
 	Wave* wave_scene;
 	Wave* wave_ways;
-
-	static CPlainInsteadView* m_curView;
 };

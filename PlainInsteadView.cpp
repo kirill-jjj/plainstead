@@ -19,13 +19,6 @@ extern "C" {
 // message sent by the common Find dialog
 UINT WM_FINDREPLACE = ::RegisterWindowMessageW(FINDMSGSTRING);
 
-CPlainInsteadView* CPlainInsteadView::m_curView = 0;
-
-CPlainInsteadView* CPlainInsteadView::GetCurrentView()
-{
-	return m_curView;
-}
-
 static std::wstring utf8_to_wide(const char* utf8Str)
 {
 	if (!utf8Str || !*utf8Str) return std::wstring();
@@ -71,11 +64,21 @@ CPlainInsteadView::~CPlainInsteadView()
 
 void CPlainInsteadView::CreateView(HWND hWndMain)
 {
-	if (!m_curView)
-		m_curView = new CPlainInsteadView();
-	m_curView->m_hWndMain = hWndMain;
+	// the controller lives in GWLP_USERDATA of the main window:
+	// the WndProc fetches it with GetWindowLongPtrW(hWnd, GWLP_USERDATA)
+	CPlainInsteadView* view = new CPlainInsteadView();
+	view->m_hWndMain = hWndMain;
+	SetWindowLongPtrW(hWndMain, GWLP_USERDATA, (LONG_PTR)view);
 	// the controls are created directly in the main window; no intermediate container
-	m_curView->CreateControls();
+	view->CreateControls();
+}
+
+void CPlainInsteadView::DestroyView()
+{
+	// detach first, so no message dispatched afterwards sees a stale pointer
+	if (m_hWndMain)
+		SetWindowLongPtrW(m_hWndMain, GWLP_USERDATA, 0);
+	delete this;
 }
 
 void CPlainInsteadView::CreateControls()

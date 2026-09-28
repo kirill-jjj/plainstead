@@ -47,6 +47,7 @@ static int soundBeforeMute = 80;
 static bool isMute = false;
 static int effectsBeforeMute = 80;
 static bool isMuteEffects = false;
+static HWND g_hWndMain = NULL; // the main frame window; the game view controller hangs on its GWLP_USERDATA
 static std::wstring currFilePath;
 static std::wstring currFileName;
 static std::wstring saveDir;
@@ -57,6 +58,12 @@ static HACCEL g_hAccel = NULL;
 HFONT AppGetOutFont() { return g_hFontOut; }
 HMENU AppGetMainMenu() { return g_hMainMenu; }
 void AppSetOutFont(HFONT hFont) { g_hFontOut = hFont; }
+
+// the game view controller, attached to the main window in WM_CREATE
+static CPlainInsteadView* GetView(HWND hWnd)
+{
+	return (CPlainInsteadView*)GetWindowLongPtrW(hWnd, GWLP_USERDATA);
+}
 
 // utf8 <-> wide helpers
 std::string utf8_encode(const std::wstring &wstr)
@@ -188,17 +195,17 @@ void AppStartNewGameFile(const std::wstring& file, const std::wstring& name)
 	}
 
 	InterpreterController::startGameFile(file, name, needAutoLog);
-	CPlainInsteadView::GetCurrentView()->SetOutputText(L"");
+	GetView(g_hWndMain)->SetOutputText(L"");
 
-	HWND hWndMain = CPlainInsteadView::GetCurrentView()->GetHwndMain();
+	HWND hWndMain = g_hWndMain;
 	if (hWndMain)
 	{
 		SetWindowTextW(hWndMain, name.c_str());
 	}
 
 	GlobalManager::getInstance().userStartGame();
-	CPlainInsteadView::GetCurrentView()->TryInsteadCommand(L"", L"Запуск игры " + name);
-	CPlainInsteadView::GetCurrentView()->InitFocusLogic();
+	GetView(g_hWndMain)->TryInsteadCommand(L"", L"Запуск игры " + name);
+	GetView(g_hWndMain)->InitFocusLogic();
 	GlobalManager::lastString = 0;
 }
 
@@ -213,7 +220,7 @@ void AppOnFileOpen()
 		memset(&ofn, 0, sizeof(ofn));
 		std::wstring initDir = saveDir;
 		ofn.lStructSize = sizeof(ofn);
-		ofn.hwndOwner = CPlainInsteadView::GetCurrentView()->GetHwndMain();
+		ofn.hwndOwner = g_hWndMain;
 		ofn.lpstrFilter = L"Instead save file (*.sav)\0*.sav\0\0";
 		ofn.lpstrFile = szFile;
 		ofn.nMaxFile = MAX_PATH;
@@ -228,8 +235,8 @@ void AppOnFileOpen()
 			if (fileDir == saveDir)
 			{
 				std::wstring userFileName = (slash == std::wstring::npos) ? userFilePath : userFilePath.substr(slash + 1);
-				CPlainInsteadView::GetCurrentView()->TryInsteadCommand(L"load " + saveGameNameDir + L"/" + userFileName);
-				CPlainInsteadView::GetCurrentView()->TryInsteadCommand(L"", L"Загружено");
+				GetView(g_hWndMain)->TryInsteadCommand(L"load " + saveGameNameDir + L"/" + userFileName);
+				GetView(g_hWndMain)->TryInsteadCommand(L"", L"Загружено");
 				MessageBoxW(NULL, L"Восстановлено!", L"Загрузка", MB_OK);
 				return;
 			}
@@ -264,7 +271,7 @@ void AppOnFileSave()
 		OPENFILENAMEW ofn;
 		memset(&ofn, 0, sizeof(ofn));
 		ofn.lStructSize = sizeof(ofn);
-		ofn.hwndOwner = CPlainInsteadView::GetCurrentView()->GetHwndMain();
+		ofn.hwndOwner = g_hWndMain;
 		ofn.lpstrFilter = L"Instead save file (*.sav)\0*.sav\0\0";
 		ofn.lpstrFile = szFile;
 		ofn.nMaxFile = MAX_PATH;
@@ -278,8 +285,8 @@ void AppOnFileSave()
 			if (fileDir == saveDir)
 			{
 				std::wstring userFileName = (slash == std::wstring::npos) ? userFilePath : userFilePath.substr(slash + 1);
-				CPlainInsteadView::GetCurrentView()->TryInsteadCommand(L"save " + saveGameNameDir + L"/" + userFileName);
-				CPlainInsteadView::GetCurrentView()->TryInsteadCommand(L"", L"Сохранение игры");
+				GetView(g_hWndMain)->TryInsteadCommand(L"save " + saveGameNameDir + L"/" + userFileName);
+				GetView(g_hWndMain)->TryInsteadCommand(L"", L"Сохранение игры");
 				MessageBoxW(NULL, L"Сохранено!", L"Сохранение", MB_OK);
 				return;
 			}
@@ -317,7 +324,7 @@ static void AppNewGameFromFile()
 	OPENFILENAMEW ofn;
 	memset(&ofn, 0, sizeof(ofn));
 	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = CPlainInsteadView::GetCurrentView()->GetHwndMain();
+	ofn.hwndOwner = g_hWndMain;
 	ofn.lpstrFilter = L"Instead game (*.lua)\0*.lua\0\0";
 	ofn.lpstrFile = szFile;
 	ofn.nMaxFile = MAX_PATH;
@@ -349,7 +356,7 @@ void AppOnNewGameFromLib()
 
 	bool useAutosave = false;
 	CSelectNewGameDialog selNewGameDialog(currFilePath, currFileName, useAutosave);
-	selNewGameDialog.DoModal(CPlainInsteadView::GetCurrentView()->GetHwndMain());
+	selNewGameDialog.DoModal(g_hWndMain);
 	if (!currFilePath.empty())
 	{
 		AppStartNewGameFile(currFilePath, currFileName);
@@ -376,11 +383,11 @@ static void AppOnRestartMenu()
 static void AppOnEnterSetup()
 {
 	CCPCBTESTDlg dlg;
-	int nResponse = dlg.DoModal(CPlainInsteadView::GetCurrentView()->GetHwndMain());
+	int nResponse = dlg.DoModal(g_hWndMain);
 	if (nResponse == IDOK)
 	{
 		// перечитываем настройки из ini-файла
-		CPlainInsteadView::GetCurrentView()->UpdateSettings();
+		GetView(g_hWndMain)->UpdateSettings();
 	}
 }
 
@@ -409,13 +416,13 @@ static void AppOnAppExit()
 		if (res == IDYES)
 		{
 			GlobalManager::getInstance().isIgnoreExitDialog = true;
-			HWND hWndMain = CPlainInsteadView::GetCurrentView()->GetHwndMain();
+			HWND hWndMain = g_hWndMain;
 			if (hWndMain) DestroyWindow(hWndMain);
 		}
 	}
 	else
 	{
-		HWND hWndMain = CPlainInsteadView::GetCurrentView()->GetHwndMain();
+		HWND hWndMain = g_hWndMain;
 		if (hWndMain) DestroyWindow(hWndMain);
 	}
 }
@@ -516,7 +523,7 @@ static void AppOnAddGameToLib()
 	OPENFILENAMEW ofn;
 	memset(&ofn, 0, sizeof(ofn));
 	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = CPlainInsteadView::GetCurrentView()->GetHwndMain();
+	ofn.hwndOwner = g_hWndMain;
 	ofn.lpstrFilter = L"Архив с игрой (*.zip)\0*.zip\0\0";
 	ofn.lpstrFile = szFile;
 	ofn.nMaxFile = MAX_PATH;
@@ -588,7 +595,7 @@ static void AppOnAddGameToLib()
 static void AppOnOpenManager()
 {
 	LauncherDialog dlg;
-	dlg.DoModal(CPlainInsteadView::GetCurrentView()->GetHwndMain());
+	dlg.DoModal(g_hWndMain);
 	if (dlg.isWantStartGame())
 	{
 		currFilePath = dlg.getStartGamePath();
@@ -663,7 +670,7 @@ static void AppOnAppAbout()
 	std::wstring textVoice = L"Текущий диктор: ";
 	textVoice += MultiSpeech::getInstance().GetCurrentReader();
 	CAboutDlg aboutDlg(textVoice);
-	aboutDlg.DoModal(CPlainInsteadView::GetCurrentView()->GetHwndMain());
+	aboutDlg.DoModal(g_hWndMain);
 }
 
 // main window procedure
@@ -676,23 +683,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// create the main menu
 		g_hMainMenu = LoadMenuW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDR_MAINFRAME));
 		SetMenu(hWnd, g_hMainMenu);
-		// create the game view (child window with edit + listboxes)
+		// create the game view controller and attach it to this window
 		CPlainInsteadView::CreateView(hWnd);
 		return 0;
 	}
 	case WM_SIZE:
-		if (CPlainInsteadView::GetCurrentView())
-			CPlainInsteadView::GetCurrentView()->OnSize(LOWORD(lParam), HIWORD(lParam));
+		if (GetView(g_hWndMain))
+			GetView(g_hWndMain)->OnSize(LOWORD(lParam), HIWORD(lParam));
 		return 0;
 	case WM_SETFOCUS:
-		if (CPlainInsteadView::GetCurrentView())
-			CPlainInsteadView::GetCurrentView()->OnMainSetFocus();
+		if (GetView(g_hWndMain))
+			GetView(g_hWndMain)->OnMainSetFocus();
 		return 0;
 	case WM_CTLCOLOREDIT:
 	case WM_CTLCOLORSTATIC:
-		if (CPlainInsteadView::GetCurrentView())
+		if (GetView(g_hWndMain))
 		{
-			CPlainInsteadView::GetCurrentView()->OnCtlColor((HWND)lParam, (HDC)wParam,
+			GetView(g_hWndMain)->OnCtlColor((HWND)lParam, (HDC)wParam,
 				message == WM_CTLCOLOREDIT ? CTLCOLOR_EDIT : CTLCOLOR_STATIC);
 			return (LRESULT)GetStockObject(WHITE_BRUSH);
 		}
@@ -700,8 +707,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_COMMAND:
 	{
 		// forward control notifications to the view
-		if (CPlainInsteadView::GetCurrentView() &&
-			CPlainInsteadView::GetCurrentView()->HandleCommand(hWnd, wParam, lParam))
+		if (GetView(g_hWndMain) &&
+			GetView(g_hWndMain)->HandleCommand(hWnd, wParam, lParam))
 			return 0;
 		int wmId = LOWORD(wParam);
 		switch (wmId)
@@ -785,13 +792,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 	case WM_DESTROY:
+	{
+		// release the view controller attached in WM_CREATE
+		CPlainInsteadView* pView = GetView(hWnd);
+		if (pView)
+			pView->DestroyView();
 		PostQuitMessage(0);
 		return 0;
+	}
 	default:
 		// WM_FINDREPLACE is a RegisterWindowMessage value, not a constant:
 		// it must be handled outside the switch
-		if (message == WM_FINDREPLACE && CPlainInsteadView::GetCurrentView())
-			return CPlainInsteadView::GetCurrentView()->OnFindReplaceMessage(lParam);
+		if (message == WM_FINDREPLACE && GetView(hWnd))
+			return GetView(hWnd)->OnFindReplaceMessage(lParam);
 		return DefWindowProcW(hWnd, message, wParam, lParam);
 	}
 }
@@ -944,22 +957,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		// not msg.hwnd: child controls cannot dispatch menu commands
 		if (hAccelTable && TranslateAcceleratorW(hWnd, hAccelTable, &msg))
 			continue;
-		if (CPlainInsteadView::GetCurrentView())
+		// Tab navigation among the controls owned by the main window;
+		// (Enter in the lists is handled by the list subclass procedures)
+		if (msg.hwnd && (msg.hwnd == hWnd || IsChild(hWnd, msg.hwnd)))
 		{
-			HWND hMain = CPlainInsteadView::GetCurrentView()->GetHwndMain();
-			// Tab navigation among the controls owned by the main window;
-			// (Enter in the lists is handled by the list subclass procedures)
-			if (hMain && msg.hwnd && (msg.hwnd == hMain || IsChild(hMain, msg.hwnd)))
+			// IsDialogMessageW with the main window would eat Enter for the
+			// default button; only let it handle navigation keys
+			if ((msg.message == WM_KEYDOWN) &&
+				(msg.wParam == VK_TAB || msg.wParam == VK_UP || msg.wParam == VK_DOWN ||
+				 msg.wParam == VK_LEFT || msg.wParam == VK_RIGHT))
 			{
-				// IsDialogMessageW with the main window would eat Enter for the
-				// default button; only let it handle navigation keys
-				if ((msg.message == WM_KEYDOWN) &&
-					(msg.wParam == VK_TAB || msg.wParam == VK_UP || msg.wParam == VK_DOWN ||
-					 msg.wParam == VK_LEFT || msg.wParam == VK_RIGHT))
-				{
-					if (IsDialogMessageW(hMain, &msg))
-						continue;
-				}
+				if (IsDialogMessageW(hWnd, &msg))
+					continue;
 			}
 		}
 		TranslateMessage(&msg);
