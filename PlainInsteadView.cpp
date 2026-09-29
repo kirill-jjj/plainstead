@@ -10,7 +10,7 @@
 #include "GlobalManager.h"
 #include "IniFile.h"
 #include "StdioFileEx.h"
-#include <regex>
+#include <vector>
 
 extern "C" {
 #include "instead/instead.h"
@@ -233,61 +233,63 @@ bool CPlainInsteadView::HandleCommand(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	return false;
 }
 
-// process the instead markup: fill a listbox with [a]refs[/a] and strip them from the text
-static std::wstring process_instead_text(std::wstring inp, //input text
-	HWND resBox, //list to add actions to
-	std::map<int/*list_pos*/, int/*id_obj*/>& map_action, // map of list positions to object ids
-	bool append_num = false //append the number to the item (for inventory)
-	)
+// ---------- PlainInstead Lua bridge ----------
+//
+// The Lua layer (tiny2/tiny3.lua) collects interactive references as structured
+// data: every iface:xref remembers (display name, ref number) in call order and
+// returns the clean display text. After each instead_cmd the C++ side reads the
+// pairs back with instead.get_refs() and only then clears them with
+// instead.clear_refs() (the Lua xref-to-command resolution needs the table
+// until the next command runs). No text markers and no regex are involved.
+struct BridgeRef
 {
-	const std::wregex regex(L"\\[a\\]([^\\#]*)\\#(\\d+)\\[\\/a\\]");//format [a]
-	std::wsregex_iterator next(inp.begin(), inp.end(), regex);
-	std::wsregex_iterator end;
-	while (next != end) {
-		std::wsmatch match = *next;
-		if (match.size() == 3)
-		{
-			std::wstring addStr = match[1].str(); //item name
-			addStr = addStr.erase(addStr.find_last_not_of(L" \t") + 1); //trim
-			std::wstring numStr = match[2].str(); //object id
-			int obj_id = _wtoi(numStr.c_str()); //object id
-			if (append_num) addStr = addStr + L"(" + numStr + L")";
-			int str_pos = (int)SendMessageW(resBox, LB_GETCOUNT, 0, 0);
-			SendMessageW(resBox, LB_INSERTSTRING, str_pos, (LPARAM)addStr.c_str());
-			map_action.insert(std::make_pair(str_pos, obj_id));
-		}
-		next++;
+	std::wstring name;
+	int num;
+};
+
+// read (name, number) pairs returned by instead.get_refs(); false if none
+static bool FetchRefs(std::vector<BridgeRef>& out)
+{
+	out.clear();
+	if (instead_function("instead.get_refs", NULL))
+	{
+		instead_clear();
+		return false;
 	}
-	std::wstring result;
-	std::regex_replace(std::back_inserter(result), inp.begin(), inp.end(), regex, L"$1");
-	return result;
+	for (int i = 0; ; i++)
+	{
+		const char* name = instead_retval(i * 2);
+		if (!name) break;
+		int num = instead_iretval(i * 2 + 1);
+		BridgeRef r;
+		r.name = utf8_to_wide(name);
+		r.num = num;
+		out.push_back(r);
+	}
+	instead_clear();
+	return !out.empty();
 }
 
-// process the instead markup with inline lua: [a: code]text[/a]
-static std::wstring process_instead_text_act(std::wstring inp,
-	HWND resBox,
-	std::map<int/*list_pos*/, std::wstring/*code*/>& map_action
-	)
+// fill a listbox from the bridge refs; returns the count of items added
+static int FillListFromRefs(HWND list, const std::vector<BridgeRef>& refs, std::map<int, int>& map_action)
 {
-	const std::wregex regex(L"\\[a\\:([^\\]]*)\\]([^\\[]*)\\[\\/a\\]");//format [a: code]text[/a]
-	std::wsregex_iterator next(inp.begin(), inp.end(), regex);
-	std::wsregex_iterator end;
-	while (next != end) {
-		std::wsmatch match = *next;
-		if (match.size() == 3)
-		{
-			std::wstring codeStr = match[1].str(); //lua code
-			codeStr = codeStr.erase(codeStr.find_last_not_of(L" \t") + 1); //trim
-			std::wstring textStr = match[2].str(); //item name
-			int str_pos = (int)SendMessageW(resBox, LB_GETCOUNT, 0, 0);
-			SendMessageW(resBox, LB_INSERTSTRING, str_pos, (LPARAM)textStr.c_str());
-			map_action.insert(std::make_pair(str_pos, codeStr));
-		}
-		next++;
+	for (const BridgeRef& r : refs)
+	{
+		int pos = (int)SendMessageW(list, LB_GETCOUNT, 0, 0);
+		SendMessageW(list, LB_INSERTSTRING, pos, (LPARAM)r.name.c_str());
+		map_action.insert(std::make_pair(pos, r.num));
 	}
-	std::wstring result;
-	std::regex_replace(std::back_inserter(result), inp.begin(), inp.end(), regex, L"$2");
-	return result;
+	return (int)refs.size();
+}
+
+// run one instead command, then collect the refs it produced
+static char* InsteadCmdWithRefs(char* cmd, int* rc, std::vector<BridgeRef>& refs)
+{
+	char* str = instead_cmd(cmd, rc);
+	FetchRefs(refs);
+	instead_function("instead.clear_refs", NULL);
+	instead_clear();
+	return str;
 }
 
 void CPlainInsteadView::TryInsteadCommand(const std::wstring& textIn, const std::wstring& cmdForLog)
@@ -311,7 +313,7 @@ void CPlainInsteadView::TryInsteadCommand(const std::wstring& textIn, const std:
 	SendMessageW(m_hListScene, LB_RESETCONTENT, 0, 0);
 	prev_map = pos_id_scene;
 	pos_id_scene.clear();
-	act_on_scene.clear();
+	std::vector<BridgeRef> refs;
 	if (!textIn.empty())
 	{
 		bool is_saving = false;
@@ -326,38 +328,36 @@ void CPlainInsteadView::TryInsteadCommand(const std::wstring& textIn, const std:
 		int rc;
 		char cmd[256];
 		snprintf(cmd, sizeof(cmd), "use %s", command.c_str());
-		str = instead_cmd(cmd, &rc);
+		str = InsteadCmdWithRefs(cmd, &rc, refs);
 		if (rc) { /* try go */
 			free(str);
 			snprintf(cmd, sizeof(cmd), "go %s", command.c_str());
-			str = instead_cmd(cmd, &rc);
+			str = InsteadCmdWithRefs(cmd, &rc, refs);
 		}
 		if (rc) { /* try act */
 			free(str);
 			snprintf(cmd, sizeof(cmd), "%s", command.c_str());
-			str = instead_cmd(cmd, &rc);
+			str = InsteadCmdWithRefs(cmd, &rc, refs);
 		}
 		if (str) {
-			tmp = utf8_to_wide(str);
-			std::wstring result = process_instead_text(tmp, m_hListScene, pos_id_scene);
-			std::wstring result2 = process_instead_text_act(result, m_hListScene, act_on_scene);
-			resout.append(result2);
+			resout.append(utf8_to_wide(str));
 			resout.append(L"\n");
 			if (!is_saving) GlobalManager::getInstance().userNewCommand();
 		}
+		free(str);
+		str = NULL;
 	}
 	else
 	{
 		// update the scene
-		p = instead_cmd("", NULL);
+		p = InsteadCmdWithRefs("", NULL, refs);
 		if (p && *p) {
-			tmp = utf8_to_wide(p);
-			std::wstring result = process_instead_text(tmp, m_hListScene, pos_id_scene);
-			std::wstring result2 = process_instead_text_act(result, m_hListScene, act_on_scene);
-			resout.append(result2);
+			resout.append(utf8_to_wide(p));
 			resout.append(L"\n");
 		}
 	}
+	// scene list from the bridge (numbers 0 = status items, beep-only)
+	FillListFromRefs(m_hListScene, refs, pos_id_scene);
 	if (prev_map.size() != pos_id_scene.size()) {
 		wave_scene->play();
 	}
@@ -365,25 +365,19 @@ void CPlainInsteadView::TryInsteadCommand(const std::wstring& textIn, const std:
 	SendMessageW(m_hListWays, LB_RESETCONTENT, 0, 0);
 	prev_map = pos_id_ways;
 	pos_id_ways.clear();
-	p = instead_cmd("way", NULL);
-	if (p && *p) {
-		tmp = utf8_to_wide(p);
-		std::wstring result = process_instead_text(tmp, m_hListWays, pos_id_ways);
-	}
+	p = InsteadCmdWithRefs("way", NULL, refs);
+	if (p) free(p);
+	FillListFromRefs(m_hListWays, refs, pos_id_ways);
 	if (prev_map.size() != pos_id_ways.size()) {
 		wave_ways->play();
 	}
 
-	p = instead_cmd("inv", NULL);
+	p = InsteadCmdWithRefs("inv", NULL, refs);
+	if (p) free(p);
 	SendMessageW(m_hListInv, LB_RESETCONTENT, 0, 0);
 	prev_map = pos_id_inv;
 	pos_id_inv.clear();
-	if (p && *p) {
-		tmp = utf8_to_wide(p);
-		// no numbers after item names: the original game view never passed
-		// append_num=true, it was introduced by mistake in the port
-		std::wstring result = process_instead_text(tmp, m_hListInv, pos_id_inv);
-	}
+	FillListFromRefs(m_hListInv, refs, pos_id_inv);
 	if (prev_map.size() != pos_id_inv.size()) {
 		wave_inv->play();
 	}
@@ -527,19 +521,7 @@ bool CPlainInsteadView::OnListEnter()
 				if (SendMessageW(m_hListScene, LB_GETCURSEL, 0, 0) == LB_ERR && SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0) > 0)
 					SendMessageW(m_hListScene, LB_SETCURSEL, 0, 0);
 			}
-		}
-		else if (act_on_scene.count(sel_pos)) // inline lua action on the scene
-		{
-			std::wstring code = act_on_scene[sel_pos];
-			int total_list_sz = (int)SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0);
-			if (!inv_save.empty()) inv_save.clear();
-			std::vector<wchar_t> selText(SendMessageW(m_hListScene, LB_GETTEXTLEN, sel_pos, 0) + 1);
-			SendMessageW(m_hListScene, LB_GETTEXT, sel_pos, (LPARAM)&selText[0]);
-			TryInsteadCommand(code, L"Действие '" + savedSelInv + L"' на '" + std::wstring(&selText[0]) + L"'");
-			if ((int)SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0) == total_list_sz)
-				SendMessageW(m_hListScene, LB_SETCURSEL, sel_pos, 0);
-			if (SendMessageW(m_hListScene, LB_GETCURSEL, 0, 0) == LB_ERR && SendMessageW(m_hListScene, LB_GETCOUNT, 0, 0) > 0)
-				SendMessageW(m_hListScene, LB_SETCURSEL, 0, 0);
+			return true;
 		}
 		return true;
 	}

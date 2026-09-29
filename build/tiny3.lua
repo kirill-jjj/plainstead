@@ -9,6 +9,7 @@ local iface = std '@iface'
 local type = std.type
 
 local dict = {}
+local refs = {} -- PlainInstead bridge: parallel array of {name, num} in display order
 
 local function get_bool(o, nam)
 	if type(o[nam]) == 'boolean' then
@@ -93,7 +94,12 @@ function iface:xref(str, o, ...)
 	if type(str) ~= 'string' then
 		std.err ("Wrong parameter to iface:xref: "..std.tostr(str), 2)
 	end
-	if not std.is_obj(o) or std.is_obj(o, 'stat') or o:disabled() then
+	if not std.is_obj(o) or std.is_obj(o, 'stat') then
+		-- stat object: number 0 tells the GUI to beep instead of acting
+		table.insert(refs, { tostring(str), 0 })
+		return str
+	end
+	if o:disabled() then
 		return str
 	end
 	local a = { ... }
@@ -110,19 +116,19 @@ function iface:xref(str, o, ...)
 	table.insert(dict, xref)
 	xref = std.tostr(#dict)
 
-	if std.cmd[1] == 'way' then
-		return "[a]"..str..std.string.format("#%s", xref).."[/a]"
-	elseif o:type 'menu' or std.is_system(o) then
-		return "[a]"..str..std.string.format("#%s", xref).."[/a]"
-	elseif std.cmd[1] == 'inv' then
-		return "[a]"..str..std.string.format("#%s", xref).."[/a]"
-	end
-	return "[a]"..str..std.string.format("#%s", xref).."[/a]"
+	-- PlainInstead bridge: remember (display name, ref number) in call order;
+	-- the C++ side reads pairs back via instead.get_refs() - no text markers
+	table.insert(refs, { tostring(str), tonumber(xref) })
+
+	return str
 end
 
 local iface_cmd = iface.cmd -- save old
 
 function iface:cmd(inp)
+	-- PlainInstead bridge: refs from the previous command were already read
+	-- by the C++ side; start a fresh batch for this command
+	instead.clear_refs()
 	local a = std.split(inp)
 	if std.tonum(a[1]) then
 		std.table.insert(a, 1, 'act')
@@ -484,14 +490,30 @@ function theme.snd.click()
 end
 
 
+-- PlainInstead bridge: return collected refs as alternating name, number values
+-- (one call per instead_cmd, in the exact display order of the markers).
+-- dict is kept alive: iface:cmd resolves "act N" numbers through it, so the
+-- C++ side must call instead.clear_refs() only after the next command was sent
+function instead.get_refs()
+	local n = #refs
+	if n == 0 then return nil end
+	-- flatten {name, num} records into alternating name, num return values
+	local flat = {}
+	for i = 1, n do
+		flat[#flat + 1] = refs[i][1]
+		flat[#flat + 1] = refs[i][2]
+	end
+	return unpack(flat)
+end
+
+function instead.clear_refs()
+	dict = {}
+	refs = {}
+end
+
 std.mod_init(function()
 	std.rawset(_G, 'instead', instead)
 end)
 std.mod_start(function()
-	dict = {}
-end)
-std.mod_step(function(state)
-	if state then
-		dict = {}
-	end
+	instead.clear_refs()
 end)

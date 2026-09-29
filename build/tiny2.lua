@@ -284,6 +284,7 @@ stead.list_search = function(self, n, dis)
 end
 
 local dict = {}
+local refs = {} -- PlainInstead bridge: parallel array of {name, num} in display order
 
 iface.xref = function(self, str, obj, ...)
 	local cmd = ''
@@ -292,7 +293,9 @@ iface.xref = function(self, str, obj, ...)
 	if not isObject(o) or isStatus(o) or (not o.id and not isXaction(o)) then
 		if isStatus(o) then
 			str = string.gsub(str, "%^", " ")
-			return ("[a]"..(str or '').."#0[/a]")
+			-- status object: number 0 tells the GUI to beep instead of acting
+			stead.table.insert(refs, { tostring(str), 0 })
+			return (str or '')
 		end
 		return str
 	end
@@ -327,16 +330,22 @@ iface.xref = function(self, str, obj, ...)
 	if isMenu(o) then
 		n = n + 1000 -- ???
 	end
+
+	-- PlainInstead bridge: remember (display name, ref number) in call order;
+	-- the C++ side reads pairs back via instead.get_refs() - no text markers
+	stead.table.insert(refs, { tostring(str), n })
+
 --	if isXaction(o) and not o.id then
 --		return stead.cat('[a:'..stead.tostr(n)..']',str,'[/a]')
 --	end
-	return stead.cat('[a]', (str or ''), '#', stead.tostr(n), '[/a]');
+	return (str or '');
 end
 
 local tag_all = stead.player_tagall -- save old
 
 stead.player_tagall = function(self)
 	dict = {}
+	refs = {}
 	return tag_all(self)
 end
 
@@ -408,6 +417,27 @@ end
 
 function iface:imgr()
 	return ''
+end
+
+-- PlainInstead bridge: return collected refs as alternating name, number values
+-- (one call per instead_cmd, in the exact display order of the markers).
+-- dict is kept alive: iface:cmd resolves "act N" numbers through it, so the
+-- C++ side must call instead.clear_refs() only after the next command was sent
+function instead.get_refs()
+	local n = #refs
+	if n == 0 then return nil end
+	-- flatten {name, num} records into alternating name, num return values
+	local flat = {}
+	for i = 1, n do
+		flat[#flat + 1] = refs[i][1]
+		flat[#flat + 1] = refs[i][2]
+	end
+	return unpack(flat)
+end
+
+function instead.clear_refs()
+	dict = {}
+	refs = {}
 end
 
 function iface:nb(t)

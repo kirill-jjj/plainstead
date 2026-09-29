@@ -84,7 +84,6 @@ private:
 	COLORREF inFontCol;
 
 	std::map<int, int> pos_id_scene;
-	std::map<int/*list_pos*/, std::wstring/*code*/> act_on_scene;
 	std::map<int, int> pos_id_ways;
 	std::map<int, int> pos_id_inv;
 	std::wstring inv_save; // the first stage of using an item
