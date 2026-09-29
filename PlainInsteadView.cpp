@@ -86,8 +86,9 @@ void CPlainInsteadView::CreateControls()
 	HINSTANCE hInst = GetModuleHandleW(NULL);
 	HWND hWnd = m_hWndMain;
 	// multiline output edit
+	// multiline output edit (WS_TABSTOP: part of the Tab cycle, see the message loop)
 	m_hOutEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-		WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_LEFT | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+		WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | ES_LEFT | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
 		0, 0, 0, 0, hWnd, (HMENU)(INT_PTR)IDC_EDIT_OUT, hInst, NULL);
 	// three lists: scene, inventory, ways
 	m_hListScene = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
@@ -708,11 +709,11 @@ void CPlainInsteadView::UpdateFocusLogic()
 		else SetFocus(m_hOutEdit);
 	}
 
-	// never disable the lists: disabled controls are invisible to screen readers
-	// and are skipped by Tab navigation (NVDA must be able to reach and announce them)
-	EnableWindow(m_hListScene, TRUE);
-	EnableWindow(m_hListInv, TRUE);
-	EnableWindow(m_hListWays, TRUE);
+	// like the original game view: empty lists are disabled, so Tab skips them
+	// and NVDA announces them as unavailable instead of an empty selection
+	if (cntScene == 0) EnableWindow(m_hListScene, FALSE);
+	if (cntInv == 0) EnableWindow(m_hListInv, FALSE);
+	if (cntWays == 0) EnableWindow(m_hListWays, FALSE);
 }
 
 void CPlainInsteadView::UpdateSettings()

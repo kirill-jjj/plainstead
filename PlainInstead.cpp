@@ -844,7 +844,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		gBassInit = 0;
 	}
 
-	if (BASS_Init(-1, 44100, BASS_DEVICE_DEFAULT | BASS_DEVICE_FREQ, 0, NULL) == 0) {
+	// NOTE: BASS_DEVICE_DEFAULT == BASS_DEVICE_MONO (both are 2), so the old
+	// BASS_DEVICE_DEFAULT|BASS_DEVICE_FREQ silently initialized a MONO mixer;
+	// device -1 is the default anyway, keep only the freq flag => stereo
+	if (BASS_Init(-1, 44100, BASS_DEVICE_FREQ, 0, NULL) == 0) {
 		gBassInit = 0;
 	}
 
