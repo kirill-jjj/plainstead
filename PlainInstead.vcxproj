@@ -134,7 +134,7 @@
     <ClCompile Include="tiny_instead\instead\instead.c" />
     <ClCompile Include="tiny_instead\instead\lfs.c" />
     <ClCompile Include="tiny_instead\instead\list.c" />
-    <ClCompile Include="tiny_instead\instead\tinymt32.c" />
+    <ClCompile Include="tiny_instead\instead\xoshiro128.c" />
     <ClCompile Include="tiny_instead\instead\util.c" />
     <ClCompile Include="tiny_instead\libgen.cpp" />
     <ClCompile Include="tiny_instead\tiny_sound.c" />
@@ -167,7 +167,7 @@
     <ClInclude Include="tiny_instead\instead\instead.h" />
     <ClInclude Include="tiny_instead\instead\list.h" />
     <ClInclude Include="tiny_instead\instead\system.h" />
-    <ClInclude Include="tiny_instead\instead\tinymt32.h" />
+    <ClInclude Include="tiny_instead\instead\xoshiro128.h" />
     <ClInclude Include="tiny_instead\instead\util.h" />
     <ClInclude Include="tiny_instead\internals.h" />
     <ClInclude Include="tiny_instead\libgen.h" />

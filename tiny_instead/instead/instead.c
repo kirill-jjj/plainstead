@@ -1,5 +1,5 @@
 /*
- * Copyright 2009-2016 Peter Kosyh <p.kosyh at gmail.com>
+ * Copyright 2009-2026 Peter Kosyh <pkosyh at yandex.ru>
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation files
@@ -29,16 +29,16 @@
 
 #define DATA_IDF INSTEAD_IDF
 #ifdef _USE_SDL
-#ifndef __EMSCRIPTEN__
-static SDL_mutex *sem;
+#if !defined(__EMSCRIPTEN__)
+static SDL_Mutex *sem;
 #endif
 void instead_lock(void) {
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__)
 	SDL_LockMutex(sem);
 #endif
 }
 void instead_unlock(void) {
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__)
 	SDL_UnlockMutex(sem);
 #endif
 }
@@ -63,14 +63,13 @@ char 		*togame(const char *s);
 lua_State	*L = NULL;
 
 static char *err_msg = NULL;
-static char instead_api_path[PATH_MAX];
+static char instead_api_path[PATH_MAX + 1];
+static char instead_base_path[PATH_MAX] = STEAD_PATH;
 
 static char *API = NULL;
 static char *MAIN = NULL;
 
 #define STEAD_API_PATH instead_api_path
-
-#define ERR_MSG_MAX 512
 
 static struct list_head extensions = LIST_HEAD_INIT(extensions);
 
@@ -121,6 +120,11 @@ static int extensions_hook(enum instead_hook nr)
 
 int instead_extension(struct instead_ext *ext)
 {
+	struct instead_ext *e = NULL;
+	for_each_extension(e) {
+		if (e == ext)
+			return 0;
+	}
 	list_add(&extensions, &ext->list);
 	return 0;
 }
@@ -134,13 +138,9 @@ void instead_err_msg(const char *s)
 {
 	if (err_msg)
 		free(err_msg);
-	if (s) {
+	if (s)
 		err_msg = strdup(s);
-		if (err_msg && strlen(err_msg) > ERR_MSG_MAX) {
-			err_msg[ERR_MSG_MAX - 4] = 0;
-			strcat(err_msg, "...");
-		}
-	} else
+	else
 		err_msg = NULL;
 }
 
@@ -149,12 +149,12 @@ const char *instead_err(void)
 	return err_msg;
 }
 
-static int report (lua_State *L, int status) 
+static int report (lua_State *L, int status)
 {
 	if (status && !lua_isnil(L, -1)) {
 		char *p;
 		const char *msg = lua_tostring(L, -1);
-		if (msg == NULL) 
+		if (msg == NULL)
 			msg = "(error object is not a string)";
 		fprintf(stderr,"Error: %s\n", msg);
 		p = instead_fromgame(msg);
@@ -180,7 +180,7 @@ static int traceback (lua_State *L) {
   return 1;
 }
 #else
-static int traceback (lua_State *L) 
+static int traceback (lua_State *L)
 {
 	lua_getfield(L, LUA_GLOBALSINDEX, "debug");
 	if (!lua_istable(L, -1)) {
@@ -198,10 +198,10 @@ static int traceback (lua_State *L)
 	return 1;
 }
 #endif
-static int docall (lua_State *L, int narg) 
+static int docall (lua_State *L, int narg)
 {
 	int status;
-	int base = 0; 	
+	int base = 0;
 	if (debug_sw) {
 		base = lua_gettop(L) - narg;  /* function index */
 		lua_pushcfunction(L, traceback);  /* push traceback function */
@@ -213,7 +213,7 @@ static int docall (lua_State *L, int narg)
 	if (debug_sw)
 		lua_remove(L, base);  /* remove traceback function */
 	/* force a complete garbage collection in case of errors */
-	if (status != 0) 
+	if (status != 0)
 		lua_gc(L, LUA_GCCOLLECT, 0);
 	return status;
 }
@@ -319,6 +319,17 @@ int instead_bretval(int n)
 	return lua_toboolean(L, n - N);
 }
 
+static int instead_bstatus(int n)
+{
+	int N;
+	if (!L)
+		return 0;
+	N = lua_gettop(L);  /* number of arguments */
+	if (n - N >= 0 || lua_isnil(L, n - N))
+		return 1;
+	return lua_toboolean(L, n - N);
+}
+
 int instead_iretval(int n)
 {
 	int N;
@@ -342,7 +353,7 @@ char *instead_file_cmd(char *s, int *rc)
 	instead_function("iface:cmd", args);
 	s = instead_retval(0);
 	if (rc)
-		*rc = !instead_bretval(1); 
+		*rc = !instead_bstatus(1);
 	instead_clear();
 	extensions_hook(cmd);
 	return s;
@@ -364,7 +375,7 @@ char *instead_cmd(char *s, int *rc)
 	free(s);
 	s = instead_retval(0);
 	if (rc)
-		*rc = !instead_bretval(1); 
+		*rc = !instead_bstatus(1);
 	instead_clear();
 	extensions_hook(cmd);
 	return s;
@@ -380,7 +391,7 @@ int instead_function(char *s, struct instead_args *args)
 	int method = 0;
 	if (!L)
 		return -1;
-	strcpy(f, s);
+	snprintf(f, sizeof(f), "%s", s);
 	p = strchr(f, '.');
 	if (!p)
 		p = strchr(f, ':');
@@ -403,7 +414,7 @@ int instead_function(char *s, struct instead_args *args)
 				lua_pushnil(L);
 				break;
 			case INSTEAD_NUM:
-				lua_pushnumber(L, atoi(args->val));
+				lua_pushinteger(L, atoi(args->val));
 				break;
 			case INSTEAD_BOOL:
 				if (!strcmp(args->val, "true"))
@@ -437,11 +448,21 @@ int instead_function(char *s, struct instead_args *args)
 }
 
 #ifdef _HAVE_ICONV
-static char *curcp = "UTF-8";
+static char *curcp = NULL;
 static char *fromcp = NULL;
 #endif
 
 #ifdef _HAVE_ICONV
+void instead_set_encoding(const char *cp)
+{
+	if (curcp)
+		free(curcp);
+	if (cp)
+		curcp = strdup(cp);
+	else
+		curcp = NULL;
+	return;
+}
 char *instead_fromgame(const char *s)
 {
 	iconv_t han;
@@ -484,17 +505,20 @@ out0:
 	return strdup(s);
 }
 #else
-char *instead_fromgame(const char *s) 
+char *instead_fromgame(const char *s)
 {
 	if (!s)
 		return NULL;
 	return strdup(s);
 }
-char *togame(const char *s) 
+char *togame(const char *s)
 {
 	if (!s)
 		return NULL;
 	return strdup(s);
+}
+void instead_set_encoding(const char *cp)
+{
 }
 #endif
 
@@ -546,7 +570,6 @@ int instead_load(char **info)
 		goto err2;
 	if (info) {
 		*info = instead_retval(0);
-		*info = instead_fromgame(*info);
 	}
 	instead_clear();
 	return rc;
@@ -556,12 +579,12 @@ err:
 	return -1;
 }
 
-int instead_loadfile(char *name)
+int instead_loadfile(const char *name)
 {
 	return instead_loadscript(name, -1, NULL, 1);
 }
 
-int instead_loadscript(char *name, int argc, char **argv, int exec)
+int instead_loadscript(const char *name, int argc, char **argv, int exec)
 {
 	int status;
 	if (exec && argc >= 0)
@@ -684,6 +707,8 @@ static int luaB_dofile (lua_State *L) {
 	return lua_gettop(L) - n;
 }
 
+#if LUA_VERSION_NUM <= 503
+/* is this hack still needed? */
 static int luaB_print (lua_State *L) {
 	int n = lua_gettop(L);  /* number of arguments */
 	int i;
@@ -703,6 +728,22 @@ static int luaB_print (lua_State *L) {
 	fputs("\n", stdout);
 	return 0;
 }
+#else
+static int luaB_print (lua_State *L) {
+  int n = lua_gettop(L);  /* number of arguments */
+  int i;
+  for (i = 1; i <= n; i++) {  /* for each argument */
+    size_t l;
+    const char *s = luaL_tolstring(L, i, &l);  /* convert it to string */
+    if (i > 1)  /* not the first element? */
+      lua_writestring("\t", 1);  /* add a tab before it */
+    lua_writestring(s, l);  /* print it */
+    lua_pop(L, 1);  /* pop result */
+  }
+  lua_writeline();
+  return 0;
+}
+#endif
 
 static int luaB_maxn (lua_State *L) {
 	lua_Integer max = 0;
@@ -720,7 +761,7 @@ static int luaB_maxn (lua_State *L) {
 }
 
 static int luaB_srandom(lua_State *L) {
-	mt_random_seed(luaL_optnumber(L, 1, time(NULL)));
+	instead_random_seed(luaL_optnumber(L, 1, time(NULL)));
 	return 0;
 }
 
@@ -729,7 +770,7 @@ static int luaB_random(lua_State *L) {
 	unsigned long r = 0;
 	long a = luaL_optnumber(L, 1, -1);
 	long b = luaL_optnumber(L, 2, -1);
-	r = mt_random();
+	r = instead_random();
 	if (a >=0 && b > a) {
 		r = a + (r % (b - a + 1));
 		lua_pushinteger(L, r);
@@ -737,7 +778,7 @@ static int luaB_random(lua_State *L) {
 		r = (r % a) + 1;
 		lua_pushinteger(L, r);
 	} else {
-		rt = mt_random_double();
+		rt = instead_random_double();
 		lua_pushnumber(L, rt);
 	}
 	return 1;
@@ -749,7 +790,7 @@ static int luaB_get_realpath(lua_State *L) {
 	const char *path = luaL_optstring(L, 1, NULL);
 	if (!path)
 		return 0;
-	strncpy(realpath, path, sizeof(realpath));
+	strncpy(realpath, path, sizeof(realpath) - 1);
 	realpath[sizeof(realpath) - 1] = 0;
 	unix_path(realpath);
 	path = getrealpath(realpath, outpath);
@@ -788,6 +829,119 @@ static int luaB_get_steadpath(lua_State *L) {
 	return 1;
 }
 
+#define utf_cont(p) ((*(p) & 0xc0) == 0x80)
+
+static int utf_ff(const char *s, const char *e)
+{
+	int l = 0;
+	if (!s || !e)
+		return 0;
+	if (s > e)
+		return 0;
+	if ((*s & 0x80) == 0) /* ascii */
+		return 1;
+	l = 1;
+	while (s < e && utf_cont(s + 1)) {
+		s ++;
+		l ++;
+	}
+	return l;
+}
+
+static int utf_bb(const char *s, const char *e)
+{
+	int l = 0;
+	if (!s || !e)
+		return 0;
+	if (s > e)
+		return 0;
+	if ((*e & 0x80) == 0) /* ascii */
+		return 1;
+	l = 1;
+	while (s < e && utf_cont(e)) {
+		e --;
+		l ++;
+	}
+	return l;
+}
+
+static int luaB_utf_next(lua_State *L) {
+	int l = 0;
+	const char *s = luaL_optstring(L, 1, NULL);
+	int idx = luaL_optnumber(L, 2, 1) - 1;
+	if (s && idx >= 0) {
+		int len = strlen(s);
+		if (idx < len)
+			l = utf_ff(s + idx, s + len - 1);
+	}
+	lua_pushinteger(L, l);
+	return 1;
+}
+
+static int luaB_utf_prev(lua_State *L) {
+	int l = 0;
+	const char *s = luaL_optstring(L, 1, NULL);
+	int idx = luaL_optnumber(L, 2, 0) - 1;
+	int len = 0;
+	if (s) {
+		len = strlen(s);
+		if (idx < 0)
+			idx += len;
+		if (idx >= 0) {
+			if (idx < len)
+				l = utf_bb(s, s + idx);
+		}
+	}
+	lua_pushinteger(L, l);
+	return 1;
+}
+
+static int luaB_utf_char(lua_State *L) {
+	int len, l = 0;
+	char *rs;
+	const char *s = luaL_optstring(L, 1, NULL);
+	int idx = luaL_optnumber(L, 2, 1) - 1;
+	if (!s || idx < 0)
+		return 0;
+	len = strlen(s) - 1;
+	while (idx >= 0 && len >= 0) {
+		s += l;
+		l = utf_ff(s, s + len);
+		if (l <= 0)
+			return 0;
+		idx --;
+		len -= l;
+	}
+	rs = malloc(l + 1);
+	if (!rs)
+		return 0;
+	if (l)
+		memcpy(rs, s, l);
+	rs[l] = 0;
+	lua_pushstring(L, rs);
+	free(rs);
+	return 1;
+}
+
+static int luaB_utf_len(lua_State *L) {
+	int l = 0;
+	int sym = 0;
+	const char *s = luaL_optstring(L, 1, NULL);
+	if (s) {
+		int len = strlen(s) - 1;
+		while (len >= 0) {
+			l = utf_ff(s, s + len);
+			if (!l)
+				break;
+			s += l;
+			len -= l;
+			sym ++;
+		}
+	}
+	lua_pushinteger(L, sym);
+	return 1;
+}
+
 extern int dir_iter_factory (lua_State *L);
 extern int luaopen_lfs (lua_State *L);
 
@@ -808,6 +962,10 @@ static const luaL_Reg base_funcs[] = {
 
 	{"instead_readdir", dir_iter_factory},
 
+	{"utf8_next", luaB_utf_next},
+	{"utf8_prev", luaB_utf_prev},
+	{"utf8_char", luaB_utf_char},
+	{"utf8_len", luaB_utf_len},
 	{ NULL, NULL }
 };
 
@@ -822,16 +980,10 @@ static int instead_platform(void)
 	snprintf(plat, sizeof(plat) - 1, "PLATFORM='IOS'");
 #elif defined(__APPLE__)
 	snprintf(plat, sizeof(plat) - 1, "PLATFORM='MACOSX'");
-#elif defined(_WIN32_WCE)
-	snprintf(plat, sizeof(plat) - 1, "PLATFORM='WINCE'");
-#elif defined(S60)
-	snprintf(plat, sizeof(plat) - 1, "PLATFORM='S60'");
 #elif defined(ANDROID)
 	snprintf(plat, sizeof(plat) - 1, "PLATFORM='ANDROID'");
 #elif defined(_WIN32)
 	snprintf(plat, sizeof(plat) - 1, "PLATFORM='WIN32'");
-#elif defined(MAEMO)
-	snprintf(plat, sizeof(plat) - 1, "PLATFORM='MAEMO'");
 #else
 	snprintf(plat, sizeof(plat) - 1, "PLATFORM='UNIX'");
 #endif
@@ -848,15 +1000,9 @@ static int instead_package(const char *path)
 	if (!stead_path)
 		return -1;
 	strcpy(stead_path, "package.path=\"");
-#if defined(_WIN32_WCE)
 	if (path) {
-		strcat(stead_path, path); /* wince have not cwd :) */
-		strcat(stead_path, "/?.lua;");
-	}
-#else
-	if (path)
 		strcat(stead_path, "./?.lua;");
-#endif
+	}
 
 #ifdef INSTEAD_LEGACY
 	p = instead_local_stead_path(wd);
@@ -890,6 +1036,18 @@ const char *instead_get_api(void)
 	return API;
 }
 
+const char *instead_lua_path(const char *path)
+{
+	if (!path)
+		return instead_base_path;
+	if (!*path) {
+		strncpy(instead_base_path, STEAD_PATH, sizeof(instead_base_path) - 1);
+		return instead_base_path;
+	}
+	strncpy(instead_base_path, path, sizeof(instead_base_path) - 1);
+	return instead_base_path;
+}
+
 static int instead_set_api(const char *api)
 {
 	int i, c = 0;
@@ -897,8 +1055,7 @@ static int instead_set_api(const char *api)
 	char *oa;
 	if (!api || !*api) {
 		FREE(API);
-		API = NULL;
-		snprintf(instead_api_path, sizeof(instead_api_path), "%s", STEAD_PATH);
+		snprintf(instead_api_path, sizeof(instead_api_path), "%s", instead_lua_path(NULL));
 	} else {
 		s = strlen(api);
 		for (i = 0; i < s; i ++) {
@@ -915,7 +1072,7 @@ static int instead_set_api(const char *api)
 		oa = API;
 		API = strdup(api);
 		FREE(oa);
-		snprintf(instead_api_path, sizeof(instead_api_path), "%s/%s", STEAD_PATH, API);
+		snprintf(instead_api_path, sizeof(instead_api_path), "%s/%s", instead_lua_path(NULL), API);
 	}
 	return 0;
 }
@@ -940,6 +1097,8 @@ static int instead_detect_api(const char *path)
 		if (api)
 			goto out;
 		p = getfilepath(path, INSTEAD_MAIN);
+		if (!p)
+			return -1;
 		if (!access(dirpath(p), R_OK))
 			api = 2;
 		free(p);
@@ -966,15 +1125,22 @@ int instead_init_lua(const char *path, int detect)
 {
 	int api = 0;
 	busy = 0;
-	setlocale(LC_ALL,"");
-	setlocale(LC_NUMERIC,"C"); /* to avoid . -> , in numbers */	
-	setlocale(LC_CTYPE,"C"); /* to avoid lower/upper problems */	
+	setlocale(LC_ALL, "");
+	setlocale(LC_NUMERIC, "C"); /* to avoid . -> , in numbers */
+	setlocale(LC_CTYPE, "C"); /* to avoid lower/upper problems */
+#ifdef LC_MESSAGES
+	setlocale(LC_MESSAGES, "C");
+#endif
+#ifdef LC_COLLATE
+	setlocale(LC_COLLATE, "C");
+#endif
 /*	strcpy(curcp, "UTF-8"); */
+	instead_set_encoding("UTF-8");
 	getdir(instead_cwd_path, sizeof(instead_cwd_path));
 	unix_path(instead_cwd_path);
 	instead_cwd_path[sizeof(instead_cwd_path) - 1] = 0;
-	strncpy(instead_game_path, path, sizeof(instead_game_path));
-	instead_cwd_path[sizeof(instead_game_path) - 1] = 0;
+	strncpy(instead_game_path, path, sizeof(instead_game_path) - 1);
+	instead_game_path[sizeof(instead_game_path) - 1] = 0;
 
 	if (detect && (api = instead_detect_api(path)) < 0) {
 		fprintf(stderr, "Can not detect game format: %s\n", path);
@@ -1019,7 +1185,7 @@ int instead_init_lua(const char *path, int detect)
 		instead_eval("STANDALONE=false");
 	instead_clear();
 	srand(time(NULL));
-	mt_random_init();
+	instead_random_init();
 	luaopen_lfs(L);
 	return 0;
 }
@@ -1042,7 +1208,10 @@ int instead_init(const char *path)
 	if (instead_init_lua(path, 1))
 		goto err;
 
-	snprintf(stead_path, sizeof(stead_path), "%s/stead.lua", STEAD_API_PATH);
+	if (snprintf(stead_path, sizeof(stead_path), "%s/stead.lua", STEAD_API_PATH) >=
+		(int)sizeof(stead_path))
+		fprintf(stderr, "Path is too long.\n");
+
 	if (dofile(L, dirpath(stead_path)))
 		goto err;
 
@@ -1051,7 +1220,7 @@ int instead_init(const char *path)
 		goto err;
 	}
 #ifdef _USE_SDL
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__)
 	sem = SDL_CreateMutex();
 	if (!sem)
 		goto err;
@@ -1089,7 +1258,7 @@ int instead_api_register(const luaL_Reg *api)
 	lua_pushglobaltable(L);
 	luaL_setfuncs(L, api, 0);
 #else
-	lua_getfield(L, LUA_GLOBALSINDEX, "_G"); 
+	lua_getfield(L, LUA_GLOBALSINDEX, "_G");
 	luaL_register(L, NULL, api);
 #endif
 	lua_pop(L, 1);
@@ -1102,29 +1271,25 @@ void instead_done(void)
 	if (wasL)
 		extensions_hook(done);
 #ifdef _USE_SDL
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__)
 	if (sem)
 		SDL_DestroyMutex(sem);
 	sem = NULL;
 #endif
 #endif
 #ifdef _HAVE_ICONV
-	if (fromcp)
-		free(fromcp);
+	FREE(fromcp);
+	FREE(curcp);
 #endif
 	if (L)
 		lua_close(L);
 	L = NULL;
-#ifdef _HAVE_ICONV
-	fromcp = NULL;
-#endif
 	if (data_idf)
 		idf_done(data_idf);
 	data_idf = NULL;
 	if (wasL)
 		setdir(instead_cwd_path);
 	FREE(API);
-	API = NULL;
 }
 
 int  instead_encode(const char *s, const char *d)

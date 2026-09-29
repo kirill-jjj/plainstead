@@ -1,5 +1,5 @@
 /*
- * Copyright 2009-2017 Peter Kosyh <p.kosyh at gmail.com>
+ * Copyright 2009-2022 Peter Kosyh <p.kosyh at gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation files
@@ -24,7 +24,7 @@
 
 #include "system.h"
 #include "util.h"
-#include "tinymt32.h"
+#include "xoshiro128.h"
 
 int get_utf8(const char *sp, unsigned long *sym_out)
 {
@@ -134,8 +134,10 @@ int is_empty(const char *str)
 {
 	if (!str || !*str)
 		return 1;
-	while (*str && !is_space(*str++))
-		return 0;
+	while (*str) {
+		if (!is_space(*str++))
+			return 0;
+	}
 	return 1;
 }
 
@@ -173,7 +175,7 @@ err:
 		free(ss);
 	if (dd)
 		free(dd);
-	return rc; 
+	return rc;
 }
 
 char *getpath(const char *d, const char *n)
@@ -229,69 +231,75 @@ void unix_path(char *path)
 char *decode(iconv_t hiconv, const char *s)
 {
 	size_t s_size, chs_size, outsz, insz;
-	char *inbuf, *outbuf, *chs_buf;
+	char *outbuf, *chs_buf;
+#if defined(_USE_SDL_ICONV)
+	const char *inbuf;
+#else
+	char *inbuf;
+#endif
 	if (!s || hiconv == (iconv_t)(-1))
 		return NULL;
-	s_size = strlen(s) + 1; 
-	chs_size = s_size * CHAR_MAX_LEN; 
+	s_size = strlen(s) + 1;
+	chs_size = s_size * CHAR_MAX_LEN;
 	if ((chs_buf = malloc(chs_size + CHAR_MAX_LEN))==NULL)
-		goto exitf; 
-	outsz = chs_size; 
-	outbuf = chs_buf; 
-	insz = s_size; 
-	inbuf = (char*)s; 
-	while (insz) { 
-		if (iconv(hiconv, &inbuf, &insz, &outbuf, &outsz) 
-						== (size_t)(-1)) 
-	   	 	goto exitf; 
-	} 
-	*outbuf++ = 0; 
-	return chs_buf; 
-exitf: 
-	if(chs_buf) 
-		free(chs_buf); 
-	return NULL; 
+		goto exitf;
+	outsz = chs_size;
+	outbuf = chs_buf;
+	insz = s_size;
+#if defined(_USE_SDL_ICONV)
+	inbuf = s;
+#else
+	inbuf = (char *)s;
+#endif
+	while (insz) {
+		if (iconv(hiconv, &inbuf, &insz, &outbuf, &outsz)
+						== (size_t)(-1))
+			goto exitf;
+	}
+	*outbuf++ = 0;
+	return chs_buf;
+exitf:
+	if(chs_buf)
+		free(chs_buf);
+	return NULL;
 }
 #endif
 
-static tinymt32_t trandom;
+static xoshiro128_t trandom;
 
-void mt_random_init(void) 
+void instead_random_init(void)
 {
-	tinymt32_init(&trandom, time(NULL));
+	xoshiro128_init(&trandom, time(NULL));
 }
 
-void mt_random_seed(unsigned long seed) 
+void instead_random_seed(unsigned long seed)
 {
-	tinymt32_init(&trandom, seed);
+	xoshiro128_init(&trandom, seed);
 }
 
-unsigned long mt_random(void) 
+unsigned long instead_random(void)
 {
-	return tinymt32_generate_uint32(&trandom);
+	return xoshiro128_next(&trandom);
 }
 
-double mt_random_double(void)
+double instead_random_double(void)
 {
-	return tinymt32_generate_32double(&trandom);
+	return xoshiro128_double(&trandom);
 }
 
-#if defined(S60) 
-#include "system.h"
+#if defined(_WIN32)
+
+#include <windows.h>
+#include <shlobj.h>
 #include <limits.h>
-#include <pwd.h>
-#include <unistd.h>
-#include <sys/stat.h>
+#include <libgen.h>
 #include <sys/types.h>
+#ifndef _MSC_VER
+#include <dir.h>
+#endif
 #include <stdio.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <string.h>
 #include <stdlib.h>
-
-#include <sys/unistd.h>
-
-#include "snprintf.c"
+#include <errno.h>
 
 int setdir(const char *path)
 {
@@ -319,6 +327,7 @@ int is_absolute_path(const char *path)
 	return (path[1] == ':');
 }
 
+#ifdef _MSC_VER
 char *dirname(char *path)
 {
 	char *p;
@@ -335,98 +344,15 @@ char *dirname(char *path)
 	return p < path ? "." : p == path ? "/" : (*p = '\0', path);
 }
 
-char* basename (char* path)
+char* basename(char* path)
 {
 	char *ptr = path;
 	int l = 0;
-	while (ptr[(l = strcspn (ptr, "\\//"))])
+	while (ptr[(l = strcspn(ptr, "\\//"))])
 		ptr += l + 1;
 	return ptr;
 }
-
-#elif defined(_WIN32_WCE) 
-
-#include "system.h"
-#include <windows.h>
-#include <shlobj.h>
-#include <limits.h>
-#include <sys/types.h>
-#include <dir.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
-
-static char curdir[PATH_MAX];
-
-int setdir(const char *path)
-{
-	strncpy(curdir, path, sizeof(curdir) - 1);
-	return 0;
-}
-
-char *getdir(char *path, size_t size)
-{
-	strncpy(path, curdir, size - 1);
-	return path;
-}
-
-char *dirpath(const char *path)
-{
-	static char fp[PATH_MAX * 4];
-	if (path[0] == '/')
-		return (char*)path;
-	strcpy(fp, curdir);
-	strcat(fp, "/");
-	strcat(fp, path);
-	unix_path(fp);
-	return fp;
-}
-
-int is_absolute_path(const char *path)
-{
-	if (!path || !*path)
-		return 0;
-	return (*path == '/' || *path == '\\');
-}
-
-#elif defined(_WIN32)
-
-#include <windows.h>
-#include <shlobj.h>
-#include <limits.h>
-#include <libgen.h>
-#include <sys/types.h>
-//#include <dir.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
-
-int setdir(const char *path)
-{
-	return chdir(path);
-}
-
-char *getdir(char *path, size_t size)
-{
-	return getcwd(path, size);
-}
-
-char *dirpath(const char *path)
-{
-	return (char*)path;
-}
-
-int is_absolute_path(const char *path)
-{
-	if (!path || !path[0])
-		return 0;
-	if (path[0] == '/' || path[0] == '\\')
-		return 1;
-	if (!path[1])
-		return 0;
-	return (path[1] == ':');
-}
-
+#endif
 #elif defined(__APPLE__)
 
 #include <limits.h>
@@ -508,12 +434,11 @@ char *getdir(char *path, size_t size)
 
 char *dirpath(const char *path)
 {
-	static char fp[PATH_MAX];
+	static char fp[PATH_MAX * 4];
 	if (path[0] == '/')
 		return (char*)path;
-	strcpy(fp, curdir);
-	strcat(fp, "/");
-	strcat(fp, path);
+	snprintf(fp, sizeof(fp), "%s/%s", curdir, path);
+	fp[sizeof(fp) - 1] = 0;
 	unix_path(fp);
 	return fp;
 }
@@ -548,7 +473,7 @@ char *getrealpath(const char *path, char *resolved)
 	const char *q;
 	char *p, *fres;
 	size_t len;
-#if defined(unix) && !defined(S60)
+#if defined(unix)
 	struct stat sb;
 	ssize_t n;
 	int idx = 0, nlnk = 0;
@@ -593,8 +518,11 @@ char *getrealpath(const char *path, char *resolved)
 		}
 		unix_path(resolved);
 		len = strlen(resolved);
-		if (len > 1)
+		if (len > 1) {
 			p += len;
+			while (p != resolved && *(p-1) == '/')
+				*(--p) = 0;
+		}
 	}
 
 loop:
@@ -638,8 +566,8 @@ loop:
 		*p = '\0';
 		goto out;
 	}
-	if (p == resolved 
-		&& is_absolute_path(path) 
+	if (p == resolved
+		&& is_absolute_path(path)
 			&& path[0] != '/') { /* win? */
 		memcpy(&p[0], path,
 		    q - path);
@@ -654,7 +582,7 @@ loop:
 		    q - path);
 		p[1 + q - path] = '\0';
 	}
-#if defined(unix) && !defined(S60)
+#if defined(unix)
 	/*
 	 * If this component is a symlink, toss it and prepend link
 	 * target to unresolved path.

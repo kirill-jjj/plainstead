@@ -72,7 +72,7 @@
     <ClCompile Include="tiny_instead\instead\list.c">
       <Filter>tiny\instead</Filter>
     </ClCompile>
-    <ClCompile Include="tiny_instead\instead\tinymt32.c">
+    <ClCompile Include="tiny_instead\instead\xoshiro128.c">
       <Filter>tiny\instead</Filter>
     </ClCompile>
     <ClCompile Include="tiny_instead\instead\util.c">
@@ -169,7 +169,7 @@
     <ClInclude Include="tiny_instead\instead\system.h">
       <Filter>tiny\instead</Filter>
     </ClInclude>
-    <ClInclude Include="tiny_instead\instead\tinymt32.h">
+    <ClInclude Include="tiny_instead\instead\xoshiro128.h">
       <Filter>tiny\instead</Filter>
     </ClInclude>
     <ClInclude Include="tiny_instead\instead\util.h">
