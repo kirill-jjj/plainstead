@@ -539,7 +539,7 @@ static void AppOnAddGameToLib()
 		ZIPENTRY ze;
 		GetZipItem(hz, -1, &ze);
 		int numitems = ze.index;
-		SetUnzipBaseDir(hz, L"games");
+		SetUnzipBaseDir(hz, (baseDir + L"games").c_str());
 		bool have_main_lua = false;
 		std::wstring game_name;
 		for (int i = 0; i < numitems; i++)
@@ -680,6 +680,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 	case WM_CREATE:
 	{
+		// remember the main window handle: the App* handlers and the WndProc
+		// itself reach the game view through it
+		g_hWndMain = hWnd;
 		// create the main menu
 		g_hMainMenu = LoadMenuW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDR_MAINFRAME));
 		SetMenu(hWnd, g_hMainMenu);
@@ -688,18 +691,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 	case WM_SIZE:
-		if (GetView(g_hWndMain))
-			GetView(g_hWndMain)->OnSize(LOWORD(lParam), HIWORD(lParam));
+		if (GetView(hWnd))
+			GetView(hWnd)->OnSize(LOWORD(lParam), HIWORD(lParam));
 		return 0;
 	case WM_SETFOCUS:
-		if (GetView(g_hWndMain))
-			GetView(g_hWndMain)->OnMainSetFocus();
+		if (GetView(hWnd))
+			GetView(hWnd)->OnMainSetFocus();
 		return 0;
 	case WM_CTLCOLOREDIT:
 	case WM_CTLCOLORSTATIC:
-		if (GetView(g_hWndMain))
+		if (GetView(hWnd))
 		{
-			GetView(g_hWndMain)->OnCtlColor((HWND)lParam, (HDC)wParam,
+			GetView(hWnd)->OnCtlColor((HWND)lParam, (HDC)wParam,
 				message == WM_CTLCOLOREDIT ? CTLCOLOR_EDIT : CTLCOLOR_STATIC);
 			return (LRESULT)GetStockObject(WHITE_BRUSH);
 		}
@@ -707,8 +710,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_COMMAND:
 	{
 		// forward control notifications to the view
-		if (GetView(g_hWndMain) &&
-			GetView(g_hWndMain)->HandleCommand(hWnd, wParam, lParam))
+		if (GetView(hWnd) &&
+			GetView(hWnd)->HandleCommand(hWnd, wParam, lParam))
 			return 0;
 		int wmId = LOWORD(wParam);
 		switch (wmId)
@@ -797,6 +800,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		CPlainInsteadView* pView = GetView(hWnd);
 		if (pView)
 			pView->DestroyView();
+		g_hWndMain = NULL;
 		PostQuitMessage(0);
 		return 0;
 	}

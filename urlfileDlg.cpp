@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "resource.h"
 #include "urlfileDlg.h"
+#include "PlainInstead.h"
 #include "unzip.h"
 
 #pragma comment(lib, "urlmon.lib")
@@ -285,25 +286,30 @@ void CUrlFileDlg::OnEndDownload(WPARAM wParam)
 	{
 		MessageBoxW(m_hWnd, L"Файл загружен!", L"Загрузка", MB_OK | MB_ICONINFORMATION);
 
-		// unzip the game
+		// unzip the game into games\ next to the exe (absolute path:
+		// the process current directory is not guaranteed to be the exe dir)
 		HZIP hz = OpenZip(m_selFile.c_str(), 0);
 		if (hz)
 		{
 			ZIPENTRY ze;
 			GetZipItem(hz, -1, &ze);
 			int numitems = ze.index;
-			SetUnzipBaseDir(hz, L"games");
+			SetUnzipBaseDir(hz, (GetExeDir() + L"games").c_str());
 			for (int i = 0; i < numitems; i++)
 			{
 				GetZipItem(hz, i, &ze);
 				UnzipItem(hz, i, ze.name);
 			}
 			CloseZip(hz);
+			// the download is complete
+			goodLoad = true;
+		}
+		else
+		{
+			MessageBoxW(m_hWnd, L"Скачанный файл не является корректным архивом игры.", L"Ошибка", MB_OK | MB_ICONERROR);
 		}
 		// delete the archive
 		DeleteFileW(m_selFile.c_str());
-		// the download is complete
-		goodLoad = true;
 	}
 
 	EndDialog(m_hWnd, -1);

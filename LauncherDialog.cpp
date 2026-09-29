@@ -728,7 +728,8 @@ static int DeleteDirectory(const std::wstring &refcstrRootDirectory,
 
 void LauncherDialog::OnBnClickedBtnDelGame()
 {
-	int sel = ListView_GetSelectionMark(m_hListInstalled);
+	// the canonical way to get the item selected from the keyboard
+	int sel = ListView_GetNextItem(m_hListInstalled, -1, LVNI_SELECTED);
 	if (sel == -1)
 	{
 		MessageBoxW(m_hWnd, L"В списке ничего не выбрано!", L"Ошибка", MB_OK | MB_ICONERROR);
@@ -1016,7 +1017,7 @@ void LauncherDialog::ReadAdditionalInfoFromXMLRss(const std::wstring& temp_xmlfi
 
 void LauncherDialog::OnBnClickedBtnOpenLink()
 {
-	int sel = ListView_GetSelectionMark(m_hListNew);
+	int sel = ListView_GetNextItem(m_hListNew, -1, LVNI_SELECTED);
 	if (sel == -1)
 	{
 		MessageBoxW(m_hWnd, L"В списке ничего не выбрано!", L"Ошибка", MB_OK | MB_ICONERROR);
@@ -1029,7 +1030,7 @@ void LauncherDialog::OnBnClickedBtnOpenLink()
 
 void LauncherDialog::OnBnClickedBtnInstall()
 {
-	int sel = ListView_GetSelectionMark(m_hListNew);
+	int sel = ListView_GetNextItem(m_hListNew, -1, LVNI_SELECTED);
 	if (sel == -1)
 	{
 		MessageBoxW(m_hWnd, L"В списке ничего не выбрано!", L"Ошибка", MB_OK | MB_ICONERROR);
@@ -1073,7 +1074,11 @@ void LauncherDialog::OnBnClickedBtnInstall()
 		return;
 	}
 
-	CUrlFileDlg dlg(gameDwnUrl, L"games\\" + gameName + L".zip");
+	// download into games\ next to the exe; absolute path, because the
+	// process current directory is not guaranteed to be the exe directory
+	std::wstring gamesDir = GetExeDir() + L"games";
+	CreateDirectoryW(gamesDir.c_str(), NULL);
+	CUrlFileDlg dlg(gameDwnUrl, gamesDir + L"\\" + gameName + L".zip");
 	dlg.DoModal(m_hWnd);
 	// after the dialog rescan the installed games
 	if (dlg.isGoodLoad())
@@ -1084,7 +1089,7 @@ void LauncherDialog::OnBnClickedBtnInstall()
 
 void LauncherDialog::OnBnClickedBtnPlayGamem()
 {
-	int sel = ListView_GetSelectionMark(m_hListInstalled);
+	int sel = ListView_GetNextItem(m_hListInstalled, -1, LVNI_SELECTED);
 	if (sel == -1)
 	{
 		MessageBoxW(m_hWnd, L"В списке ничего не выбрано!", L"Ошибка", MB_OK | MB_ICONERROR);

@@ -15,8 +15,35 @@ static ZRESULT lasterror = ZR_OK;
 struct ZipHandle
 {
 	mz_zip_archive zip;
+	FILE* file;           // owned FILE* when opened by name
 	std::wstring baseDir; // base dir for relative paths
+	ZipHandle() : file(NULL) { memset(&zip, 0, sizeof(zip)); }
 };
+
+// create every missing component of the directory path; unlike
+// SHCreateDirectoryExW this accepts relative paths and reports failures
+static void CreateDirRecursive(const std::wstring& path)
+{
+	if (path.empty()) return;
+	std::wstring cur;
+	size_t i = 0;
+	while (i < path.size())
+	{
+		size_t slash = path.find_first_of(L"\\/", i);
+		if (slash == std::wstring::npos) slash = path.size();
+		if (cur.empty() && slash == 2 && path[1] == L':')
+			cur = path.substr(0, slash); // drive letter only, nothing to create
+		else
+		{
+			if (cur.empty()) cur = path.substr(0, slash);
+			else cur += L"\\" + path.substr(i, slash - i);
+			if (!cur.empty() && cur.back() != L':' &&
+				GetFileAttributesW(cur.c_str()) == INVALID_FILE_ATTRIBUTES)
+				CreateDirectoryW(cur.c_str(), NULL);
+		}
+		i = slash + 1;
+	}
+}
 
 // cut off sneaky prefixes (\, /, c:\, ..\) from archive entry names (Zip Slip guard)
 static void SafeEntryName(const char* utf8name, TCHAR* out, size_t outLen)
@@ -56,45 +83,19 @@ HZIP OpenZip(const TCHAR* fn, const char* password)
 	lasterror = ZR_OK;
 	if (!fn) { lasterror = ZR_ARGS; return 0; }
 
+	// open by name through the wide CRT: no 8.3-name dance, unicode paths work
+	FILE* f = _wfopen(fn, L"rb");
+	if (!f) { lasterror = ZR_NOFILE; return 0; }
+
 	ZipHandle* handle = new ZipHandle();
-	memset(&handle->zip, 0, sizeof(handle->zip));
-
-	// convert the wide file name to a narrow one acceptable by CreateFileA-free path:
-	// use the short ANSI conversion through the OS; games dir is ASCII in practice,
-	// but be robust: open with _wfopen and init from a stdio reader is not exposed
-	// by miniz, so map the name to the short path form when needed
-	std::wstring wfn = fn;
-	std::string ascii;
-	int need = WideCharToMultiByte(CP_UTF8, 0, wfn.c_str(), -1, NULL, 0, NULL, NULL);
-	if (need > 1)
+	if (!mz_zip_reader_init_cfile(&handle->zip, f, 0, 0))
 	{
-		ascii.resize(need - 1);
-		WideCharToMultiByte(CP_UTF8, 0, wfn.c_str(), -1, &ascii[0], need, NULL, NULL);
+		fclose(f);
+		delete handle;
+		lasterror = ZR_CORRUPT;
+		return 0;
 	}
-
-	{
-		// retry via short (8.3) path which is always ANSI-safe
-		wchar_t shortPath[MAX_PATH];
-		GetShortPathNameW(wfn.c_str(), shortPath, MAX_PATH);
-		int need2 = WideCharToMultiByte(CP_ACP, 0, shortPath, -1, NULL, 0, NULL, NULL);
-		if (need2 > 1)
-		{
-			std::string shortAscii(need2 - 1, 0);
-			WideCharToMultiByte(CP_ACP, 0, shortPath, -1, &shortAscii[0], need2, NULL, NULL);
-			if (!mz_zip_reader_init_file(&handle->zip, shortAscii.c_str(), 0))
-			{
-				lasterror = ZR_NOFILE;
-				delete handle;
-				return 0;
-			}
-		}
-		else
-		{
-			lasterror = ZR_NOFILE;
-			delete handle;
-			return 0;
-		}
-	}
+	handle->file = f; // closed in CloseZip
 	return (HZIP)handle;
 }
 
@@ -127,6 +128,7 @@ ZRESULT CloseZip(HZIP hz)
 	if (!hz) { lasterror = ZR_ARGS; return ZR_ARGS; }
 	ZipHandle* handle = (ZipHandle*)hz;
 	mz_zip_reader_end(&handle->zip);
+	if (handle->file) fclose(handle->file); // owned by OpenZip(fn)
 	delete handle;
 	lasterror = ZR_OK;
 	return ZR_OK;
@@ -236,7 +238,7 @@ ZRESULT UnzipItem(HZIP hz, int index, const TCHAR* fn)
 		TCHAR dirName[MAX_PATH];
 		SafeEntryName(stat.m_filename, dirName, MAX_PATH);
 		std::wstring full = handle->baseDir.empty() ? dirName : handle->baseDir + L"\\" + dirName;
-		SHCreateDirectoryExW(NULL, full.c_str(), NULL);
+		CreateDirRecursive(full);
 		lasterror = ZR_OK;
 		return ZR_OK;
 	}
@@ -255,7 +257,7 @@ ZRESULT UnzipItem(HZIP hz, int index, const TCHAR* fn)
 		if (slash != std::wstring::npos)
 		{
 			parent.resize(slash);
-			SHCreateDirectoryExW(NULL, parent.c_str(), NULL);
+			CreateDirRecursive(parent);
 		}
 	}
 	// extract to memory then write (lets us control the target path safely)
