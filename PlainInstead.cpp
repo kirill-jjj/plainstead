@@ -965,10 +965,25 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		// (Enter in the lists is handled by the list subclass procedures)
 		if (msg.hwnd && (msg.hwnd == hWnd || IsChild(hWnd, msg.hwnd)))
 		{
+			// Tab must move focus between the game lists: a multiline edit
+			// control claims DLGC_WANTTAB, so IsDialogMessageW would feed Tab
+			// to the readonly editor where it does nothing (focus trap)
+			if ((msg.message == WM_KEYDOWN) && (msg.wParam == VK_TAB))
+			{
+				HWND from = GetFocus();
+				if (!from || !IsChild(hWnd, from))
+					from = hWnd;
+				HWND next = GetNextDlgTabItem(hWnd, from, GetKeyState(VK_SHIFT) < 0);
+				if (next)
+				{
+					SetFocus(next);
+					continue;
+				}
+			}
 			// IsDialogMessageW with the main window would eat Enter for the
 			// default button; only let it handle navigation keys
 			if ((msg.message == WM_KEYDOWN) &&
-				(msg.wParam == VK_TAB || msg.wParam == VK_UP || msg.wParam == VK_DOWN ||
+				(msg.wParam == VK_UP || msg.wParam == VK_DOWN ||
 				 msg.wParam == VK_LEFT || msg.wParam == VK_RIGHT))
 			{
 				if (IsDialogMessageW(hWnd, &msg))

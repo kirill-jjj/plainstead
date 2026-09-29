@@ -170,9 +170,11 @@ bool CPlainInsteadView::HandleCommand(HWND hWnd, WPARAM wParam, LPARAM lParam)
 		switch (wmEvent)
 		{
 		case LBN_SETFOCUS:
-			if ((HWND)lParam == m_hListScene) OnLbnSetfocus(m_hListScene, L"Сцена");
-			else if ((HWND)lParam == m_hListInv) OnLbnSetfocus(m_hListInv, L"Инвентарь");
-			else if ((HWND)lParam == m_hListWays) OnLbnSetfocus(m_hListWays, L"Пути");
+			// the exact announcements of the original game view:
+			// objects / inventory / ways
+			if ((HWND)lParam == m_hListScene) OnLbnSetfocus(m_hListScene, L"объекты");
+			else if ((HWND)lParam == m_hListInv) OnLbnSetfocus(m_hListInv, L"инвентарь");
+			else if ((HWND)lParam == m_hListWays) OnLbnSetfocus(m_hListWays, L"пути");
 			return true;
 		case LBN_DBLCLK:
 			// double click acts as ENTER
