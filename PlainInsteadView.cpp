@@ -377,7 +377,9 @@ void CPlainInsteadView::TryInsteadCommand(const std::wstring& textIn, const std:
 	pos_id_inv.clear();
 	if (p && *p) {
 		tmp = utf8_to_wide(p);
-		std::wstring result = process_instead_text(tmp, m_hListInv, pos_id_inv, true);
+		// no numbers after item names: the original game view never passed
+		// append_num=true, it was introduced by mistake in the port
+		std::wstring result = process_instead_text(tmp, m_hListInv, pos_id_inv);
 	}
 	if (prev_map.size() != pos_id_inv.size()) {
 		wave_inv->play();
